@@ -2,14 +2,8 @@
 import os
 import pandas as pd
 import numpy as np
-import shutil
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import pickle
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-import matplotlib.pyplot as plt
-import seaborn as sns
 import logging
 import warnings
 import joblib
