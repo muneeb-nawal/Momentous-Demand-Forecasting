@@ -1,4 +1,3 @@
-
 import os
 import pandas as pd
 import numpy as np
@@ -254,19 +253,19 @@ def load_and_process_data():
     # Load the data into a DataFrame
     file_path = 'New Subs Data.xlsx'  # Update this to the actual file path
     sheet_name = 'creatine combined_flag stockout'  # Update this to the actual sheet name
-    df_subs = pd.read_excel(file_path, sheet_name=sheet_name)
 
+    df_subs = pd.read_excel(file_path, sheet_name=sheet_name)
 
     # Create CSVs for Amazon sales channel
     df_dotcomsubs = create_transformed_df(df_subs, '.com')
     dataframes_dotcomsubs = process_products_by_name(df_dotcomsubs)
 
 
-
     # Directory where your models are saved
     directory = 'dot_com/Best Outputs/best_models'
     # Initialize an empty DataFrame to store all predictions
     final_preds_df_dotcomsubs = pd.DataFrame()
+
     # Loop through each product in the input data dictionary and make predictions
     for product_key, product_data in dataframes_dotcomsubs.items():
         logging.info(f"Making predictions for product: {product_key}")
@@ -276,23 +275,18 @@ def load_and_process_data():
         final_preds_df_dotcomsubs = pd.concat([final_preds_df_dotcomsubs, predictions_df_dotcomsubs], ignore_index=True)
 
 
-
-
     final_preds_df_dotcomsubs_agg = get_final_results(final_preds_df_dotcomsubs, months_ahead=4)
-
-
-
 
     # # Create CSVs for .com sales channel
     df_amasubs = create_transformed_df(df_subs, 'Amazon')
     dataframes_amasubs = process_products_by_name(df_amasubs)
 
 
-
     # Directory where your models are saved
     directory = 'amazon/Best Outputs/best_models'
     # Initialize an empty DataFrame to store all predictions
     final_preds_df_amasubs = pd.DataFrame()
+
     # Loop through each product in the input data dictionary and make predictions
     for product_key, product_data in dataframes_amasubs.items():
         logging.info(f"Making predictions for product: {product_key}")
@@ -301,28 +295,13 @@ def load_and_process_data():
         # Append the predictions for the current product to the final DataFrame
         final_preds_df_amasubs = pd.concat([final_preds_df_amasubs, predictions_df_amasubs], ignore_index=True)
 
-
-
-
-
     final_preds_df_amasubs_agg = get_final_results(final_preds_df_amasubs, months_ahead=4)
-
-
-
-
-
-
 
     # Load the data into a DataFrame
     file_path = 'New OTP Data.xlsx'  # Update this to the actual file path
     df_otp = pd.read_excel(file_path)
 
-
-
-
     df_amaotp = create_transformed_df_otp(df_otp, 'Amazon')
-
-
 
     df_amaotp['order_date'] = pd.to_datetime(df_amaotp['order_date'])
     df_amaotp = df_amaotp[df_amaotp['order_date'] >= pd.Timestamp(2023,1,1)]
@@ -332,22 +311,18 @@ def load_and_process_data():
     df_amaotp['year'] = df_amaotp['order_date'].dt.year
     df_amaotp['week'] = df_amaotp['order_date'].dt.isocalendar().week
 
-
-
-
     df_amaotp.fillna(0,inplace=True)
-
-
 
     # Define the path to the best models and the forecast data
     best_models_path = "best models amazon OTP"
     forecast_data = df_amaotp[df_amaotp.order_date>=pd.to_datetime("2024-09-01")]
+
     # Initialize an empty DataFrame to store results
     results_df = pd.DataFrame()
+
     # Iterate through each model in the specified directory
     for model_file in os.listdir(best_models_path):
-        model_path = os.path.join(best_models_path, model_file)
-        
+        model_path = os.path.join(best_models_path, model_file)        
         # Extract SKU and product name from the model file name
         model_parts = model_file.split("_")
         sku_id = int(model_parts[2]) if model_parts[2].isdigit() else model_parts[2]
@@ -375,10 +350,8 @@ def load_and_process_data():
         temp_df['product_name'] = product_name
         # Append the results to the final DataFrame
         results_df = pd.concat([results_df, temp_df], ignore_index=True)
-    
 
-
-
+            
     # Pivot the DataFrame to wide format
     result_df1 = pd.pivot_table(data=results_df, index='Sku', columns='order_date', values='units_sold')
     # Flatten the multi-level columns
@@ -390,11 +363,7 @@ def load_and_process_data():
     final_preds_df_amaotp_agg = result_df1.copy()
 
 
-
-
     df_dotcomotp = create_transformed_df_otp(df_otp, '.com')
-
-
 
     df_dotcomotp['order_date'] = pd.to_datetime(df_dotcomotp['order_date'])
     df_dotcomotp = df_dotcomotp[df_dotcomotp['order_date'] >= pd.Timestamp(2023,1,1)]
@@ -404,18 +373,17 @@ def load_and_process_data():
     df_dotcomotp['year'] = df_dotcomotp['order_date'].dt.year
     df_dotcomotp['week'] = df_dotcomotp['order_date'].dt.isocalendar().week
 
-
-
     df_dotcomotp.fillna(0,inplace=True)
-
-
 
     # Filter forecast data starting from September 1, 2024
     forecast_data = df_dotcomotp[df_dotcomotp.order_date >= pd.to_datetime("2024-09-01")]
+
     # Path to the directory containing the best models
     best_models_path = "best models com OTP"
+
     # Initialize an empty DataFrame to store results
     results_df = pd.DataFrame()
+
     # Iterate through each model file in the directory
     for model_file in os.listdir(best_models_path):
         model_path = os.path.join(best_models_path, model_file)
@@ -426,12 +394,15 @@ def load_and_process_data():
         if sku_id.isdigit():
             sku_id = int(sku_id)
         product_name = model_parts[3].split('.')[0]
+
         # Skip models for a specific product name
         if product_name == "Fadogia Agrestis":
             continue
+
         # Filter the forecast data for the current SKU
         sku_data = forecast_data[forecast_data.Sku == sku_id].copy()
         sku_data.drop_duplicates(subset=['order_date'], inplace=True)
+
         try:
             # Load the model
             model = joblib.load(model_path)
@@ -444,24 +415,25 @@ def load_and_process_data():
             # Prepare the feature columns for prediction
             feature_columns = [col for col in sku_data.columns if col in model.feature_names_in_]
             prediction_data = sku_data[feature_columns]
+
             # Create a DataFrame for storing predictions
             temp_df = pd.DataFrame()
             temp_df['order_date'] = sku_data['order_date']
             temp_df['units_sold'] = model.predict(prediction_data)
             temp_df.set_index('order_date', inplace=True)
+
             # Resample the data to end-of-month frequency and reset index
             temp_df = temp_df.resample('M').sum().reset_index()
             temp_df['Sku'] = sku_id
             temp_df['product_name'] = product_name
+
             # Append the results to the final DataFrame
             results_df = pd.concat([results_df, temp_df], ignore_index=True)
+
         except AttributeError as e:
             print(f"AttributeError with model {model_path}: {e}")
         except Exception as e:
             print(f"Error processing model {model_path}: {e}")
-
-
-
 
     # Pivot the DataFrame to wide format
     result_df1 = pd.pivot_table(data=results_df, index='Sku', columns='order_date', values='units_sold')
@@ -473,78 +445,49 @@ def load_and_process_data():
     # Show the flattened DataFrame
     final_preds_df_comotp_agg = result_df1.copy()
 
-
-
     final_preds_df_dotcomsubs_agg['SKU'] = final_preds_df_dotcomsubs_agg['SKU'].apply(lambda x: x.split('_')[-1])
-
-
-
     final_preds_df_comotp_agg.rename(columns={'Sku': 'SKU'}, inplace=True)
-
-
-
     final_preds_df_amasubs_agg['SKU'] = final_preds_df_amasubs_agg['SKU'].apply(lambda x: x.split('_')[-1])
-
-
-
     final_preds_df_amaotp_agg.rename(columns={'Sku': 'SKU'}, inplace=True)
 
 
+    # Ensure SKU column is cleaned (remove any leading/trailing spaces, etc.)
+    final_preds_df_dotcomsubs_agg['SKU'] = final_preds_df_dotcomsubs_agg['SKU'].str.strip()
+    final_preds_df_comotp_agg['SKU'] = final_preds_df_comotp_agg['SKU'].str.strip()
 
 
-    # Get the current date and determine the start of the current month
-    current_date = pd.Timestamp.now()
-    start_date = pd.Timestamp(current_date.year, current_date.month, 1)
-    # Define the number of months to include in the dynamic range
-    num_months = 4
-    # Generate a list of month start dates
-    dates = pd.date_range(start=start_date, periods=num_months + 1, freq='MS').strftime('%Y-%m-%d').tolist()
-    # Prepare DataFrames with dynamic column names
-    for date in dates:
-        if date not in final_preds_df_dotcomsubs_agg.columns:
-            final_preds_df_dotcomsubs_agg[date] = np.nan
-        if date not in final_preds_df_comotp_agg.columns:
-            final_preds_df_comotp_agg[date] = np.nan
+    # Append the two DataFrames vertically
+    combined_df_dotcom = pd.concat([final_preds_df_dotcomsubs_agg, final_preds_df_comotp_agg])
 
-    # Merge DataFrames on 'SKU' with outer join to ensure all SKUs are included
-    merged_df = pd.merge(final_preds_df_dotcomsubs_agg, final_preds_df_comotp_agg, on='SKU', suffixes=('_subs', '_otp'), how='outer')
-    # Fill NaN values with 0 for summation
-    for date in dates:
-        merged_df[date] = merged_df[f'{date}_subs'].fillna(0) + merged_df[f'{date}_otp'].fillna(0)
-    # Drop the individual columns with suffixes
-    final_preds_df_com_agg = merged_df[['SKU'] + dates]
+    # Ensure the non-SKU columns are numeric for summing (assuming they are date columns or numeric values)
+    # The 'SKU' column will be used as a group key, so the remaining columns must be numeric
+    numeric_columns = combined_df_dotcom.columns.drop('SKU')
+    combined_df_dotcom[numeric_columns] = combined_df_dotcom[numeric_columns].apply(pd.to_numeric, errors='coerce')
 
+    # Group by SKU and sum the numeric columns
+    final_summed_df_dotcom = combined_df_dotcom.groupby('SKU', as_index=False).sum()
+
+    # Display the result
+    final_preds_df_com_agg = final_summed_df_dotcom.copy()
     final_preds_df_com_agg = final_preds_df_com_agg[final_preds_df_com_agg['SKU'] != '850030796080']
-    
 
-    
-    # Get the current date and determine the start of the current month
-    current_date = pd.Timestamp.now()
-    start_date = pd.Timestamp(current_date.year, current_date.month, 1)
-    # Define the number of months to include in the dynamic range
-    num_months = 4
-    # Generate a list of month start dates
-    dates = pd.date_range(start=start_date, periods=num_months + 1, freq='MS').strftime('%Y-%m-%d').tolist()
-    # Prepare DataFrames with dynamic column names
-    for date in dates:
-        if date not in final_preds_df_amasubs_agg.columns:
-            final_preds_df_amasubs_agg[date] = np.nan
-        if date not in final_preds_df_amaotp_agg.columns:
-            final_preds_df_amaotp_agg[date] = np.nan
-    # Merge DataFrames on 'SKU' with outer join to ensure all SKUs are included
-    merged_df_ama = pd.merge(final_preds_df_amasubs_agg, final_preds_df_amaotp_agg, on='SKU', suffixes=('_subs', '_otp'), how='outer')
-    # Fill NaN values with 0 for summation
-    for date in dates:
-        merged_df_ama[date] = merged_df_ama[f'{date}_subs'].fillna(0) + merged_df_ama[f'{date}_otp'].fillna(0)
-    # Drop the individual columns with suffixes
-    final_preds_df_ama_agg = merged_df_ama[['SKU'] + dates]
+    # Append the two DataFrames vertically
+    combined_df_ama = pd.concat([final_preds_df_amasubs_agg, final_preds_df_amaotp_agg])
 
+    # Ensure the non-SKU columns are numeric for summing (assuming they are date columns or numeric values)
+    # The 'SKU' column will be used as a group key, so the remaining columns must be numeric
+    numeric_columns = combined_df_ama.columns.drop('SKU')
+    combined_df_ama[numeric_columns] = combined_df_ama[numeric_columns].apply(pd.to_numeric, errors='coerce')
 
+    # Group by SKU and sum the numeric columns
+    final_summed_df_ama = combined_df_ama.groupby('SKU', as_index=False).sum()
+
+    # Display the result
+    final_preds_df_ama_agg = final_summed_df_ama.copy()
 
     final_preds_df_ama_agg = final_preds_df_ama_agg[final_preds_df_ama_agg['SKU'] != 'MOMENTOUS-HUB-FADO']
     
     return final_preds_df_com_agg.round(0) , final_preds_df_ama_agg.round(0)
-
 
 
 
