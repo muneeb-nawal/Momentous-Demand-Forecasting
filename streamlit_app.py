@@ -261,7 +261,7 @@ def main_app():
     st.markdown("This app allows you to view and download SKU-wise forecasts for units sold on both website (.com) and Amazon sales channels.")
 
     # Sales Channels
-    st.subheader("Sales Channels")
+    # st.subheader("Sales Channels")
     # col1, col2 = st.columns(2)
     # with col1:
     #     website_channel = st.checkbox("Website (.com)", value=True)
