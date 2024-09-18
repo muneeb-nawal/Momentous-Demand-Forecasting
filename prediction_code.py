@@ -3,7 +3,7 @@
 import os
 import pandas as pd
 import numpy as np
-from datetime import datetime
+import datetime
 from dateutil.relativedelta import relativedelta
 import pickle
 import logging
@@ -224,10 +224,10 @@ def get_final_results(best_final_results):
     """
     best_final_results['upgrade_date'] = pd.to_datetime(best_final_results['upgrade_date'])
 
-    current_date = datetime.now()
+    current_date = datetime.datetime.now()
     start_date = current_date.replace(day=1).date()
 
-    end_date = datetime(2025, 12, 31).date()
+    end_date = datetime.datetime(2025, 12, 31).date()
 
     best_final_results['upgrade_date'] = best_final_results['upgrade_date'].dt.date
     best_final_results_filtered = best_final_results[
@@ -307,7 +307,7 @@ def filter_to_current_and_next_months(df, num_months=5):
     pd.DataFrame: A filtered DataFrame including the 'SKU' column and the specified months.
     """
     # Get the current date
-    today = datetime.today()
+    today = datetime.datetime.today()
 
     # Format the current month as 'YYYY-MM-01'
     current_month = today.strftime('%Y-%m-01')
@@ -337,13 +337,64 @@ def filter_to_current_and_next_months(df, num_months=5):
 
 # 7. Main Implementation
 
-def load_and_process_data():
+def load_and_process_data(marketing_data):
 
     # Load the data into a DataFrame
     file_path = 'New Subs Data.xlsx'  # Update this to the actual file path
     sheet_name = 'creatine combined_flag stockout'  # Update this to the actual sheet name
 
     df_subs = pd.read_excel(file_path, sheet_name=sheet_name)
+
+    # Convert marketing_data to the format expected by the prediction code
+    spend_updates = marketing_data.set_index('Channel').to_dict()
+
+    # Initialize the spend data with the provided values
+    spends_df_subs = pd.DataFrame(spend_updates)
+    print('User provided inputs')
+    print(spends_df_subs)
+
+    # # Initialize the spend data with generic month labels
+    # spend_updates = {
+    #     'current month': [76904.46, 169527.61, 214805.7733, 355941.7067, 449181.4467, 7000],
+    #     'month 1': [110000, 175000, 212215, 219228, 306728, 15000],
+    #     'month 2': [120000, 225000, 233437, 254928, 364928, 20000],
+    #     'month 3': [85000, 175000, 256781, 224228, 331728, 65000],
+    #     'month 4': [0, 0, 0, 0, 0, 0]
+    # }
+
+    # Create DataFrame
+    spends_df_subs = pd.DataFrame(spend_updates, index=['Spends_Meta', 'Spends_Google', 'Spends_Amazon', 'Spends_Audio_SponCon', 'Spends_Partnerships', 'Spends_Others']).T
+
+    # Aggregate spend data in spends_df_subs
+    spends_df_subs['platform_spends'] = spends_df_subs['Spends_Meta'] + spends_df_subs['Spends_Google'] + spends_df_subs['Spends_Others']
+    spends_df_subs['promotional_spends'] = spends_df_subs['Spends_Audio_SponCon'] + spends_df_subs['Spends_Partnerships']
+    spends_df_subs['Amazon_spends'] = spends_df_subs['Spends_Amazon']
+
+    # Function to map generic month labels to actual date strings
+    def map_month_labels_to_dates():
+        current_date = datetime.datetime.now()  # Using datetime.datetime.now() explicitly
+        month_mapping = {}
+        for i, label in enumerate(['current month', 'month 1', 'month 2', 'month 3', 'month 4']):
+            month_mapping[label] = (current_date + datetime.timedelta(days=30 * i)).strftime('%Y-%m')
+        return month_mapping
+
+    # Map the generic month labels to actual month strings
+    month_mapping = map_month_labels_to_dates()
+
+    # Ask the user if they want to update the spends data
+    # user_response = input("Do you want to update the spends data with new values? (yes/no): ").strip().lower()
+    # if user_response == 'yes':
+        # Update df_subs with user-provided data
+    for generic_label, actual_month in month_mapping.items():
+        mask = (df_subs['age'] == 0) & (df_subs['acquisition_month_sku_level'] == actual_month)
+        if any(mask):
+            df_subs.loc[mask, 'platform_spends'] = spends_df_subs.at[generic_label, 'platform_spends']
+            df_subs.loc[mask, 'promotional_spends'] = spends_df_subs.at[generic_label, 'promotional_spends']
+            df_subs.loc[mask, 'Amazon_spends'] = spends_df_subs.at[generic_label, 'Amazon_spends']
+    print("Spends data has been updated successfully.")
+    # else:
+    #     print("Using default spends data.")
+
 
     # Create CSVs for Amazon sales channel
     df_dotcomsubs = create_transformed_df(df_subs, '.com')
@@ -388,8 +439,8 @@ def load_and_process_data():
     model_save_directory_comsubs = 'dot_com/Best Outputs/best_models'
 
     # Define the current date and forecast period till the end of next year
-    current_date_comsubs = datetime.now().replace(day=1)  # Current month (1st of the month)
-    next_year_end_comsubs = datetime(current_date_comsubs.year + 1, 12, 31)  # End of next year
+    current_date_comsubs = datetime.datetime.now().replace(day=1)  # Current month (1st of the month)
+    next_year_end_comsubs = datetime.datetime(current_date_comsubs.year + 1, 12, 31)  # End of next year
 
     # Calculate the total number of months from the current month to the end of next year
     total_forecast_months_comsubs = (next_year_end_comsubs.year - current_date_comsubs.year) * 12 + (next_year_end_comsubs.month - current_date_comsubs.month + 1)
@@ -535,7 +586,7 @@ def load_and_process_data():
     model_save_directory_amasubs = 'amazon/Best Outputs/best_models'
 
     # Define the current date and forecast period until the end of next year
-    current_date_amasubs = datetime.now().replace(day=1)  # Current month (1st of the month)
+    current_date_amasubs = datetime.datetime.now().replace(day=1)  # Current month (1st of the month)
     end_of_next_year_amasubs = (current_date_amasubs + relativedelta(years=1, month=12, day=31)).replace(day=1)
     forecast_months_amasubs = calculate_total_months(current_date_amasubs.strftime('%Y-%m-%d'), end_of_next_year_amasubs.strftime('%Y-%m-%d'))  # Forecast until the end of next year
 
@@ -637,6 +688,70 @@ def load_and_process_data():
     # Load the data into a DataFrame
     file_path = 'New OTP Data.xlsx' 
     df_otp = pd.read_excel(file_path)
+
+
+    # Function to determine the number of days in each respective month
+    def get_days_in_months():
+        current_date = datetime.datetime.now()
+        days_in_months = []
+        for i in range(5):  # Current month and the next four months
+            month_start = current_date.replace(day=1) + datetime.timedelta(days=32 * i)
+            next_month_start = month_start.replace(day=28) + datetime.timedelta(days=4)
+            last_day_of_month = next_month_start - datetime.timedelta(days=next_month_start.day)
+            days_in_months.append(last_day_of_month.day)
+        return days_in_months
+
+    # Getting the number of days in each respective month
+    days_in_months = get_days_in_months()
+
+    # Create a new dictionary for spends_updates_otp
+    spends_updates_otp = {}
+
+    # Create a new dictionary for spends_updates_otp
+    spends_updates_otp = {}
+
+    # Iterate over each month and each category, dividing by the number of days in the month
+    for i, (month_label, spends) in enumerate(spend_updates.items()):
+        spends_updates_otp[month_label] = [float(spend) / days_in_months[i] if days_in_months[i] > 0 else 0.0 for spend in spends.values()]
+
+    spends_df_otp = pd.DataFrame(spends_updates_otp, index=['Spends_Meta', 'Spends_Google', 'Spends_Amazon', 'Spends_Audio_SponCon', 'Spends_partnerships', 'Spends_Others']).T
+
+        # Function to map generic month labels to actual date strings
+    def map_month_labels_to_dates():
+        current_date = datetime.datetime.now()  # Using datetime.datetime.now() explicitly
+        month_mapping = {}
+        for i, label in enumerate(['current month', 'month 1', 'month 2', 'month 3', 'month 4']):
+            month_mapping[label] = (current_date + datetime.timedelta(days=30 * i)).strftime('%Y-%m')
+        return month_mapping
+
+    # Map the generic month labels to actual month strings
+    month_mapping = map_month_labels_to_dates()
+
+    # Make sure the 'order_date' is in datetime format
+    df_otp['order_date'] = pd.to_datetime(df_otp['order_date'])
+
+    # Create a new column 'order-month' formatted as 'YYYY-MM'
+    df_otp['order_month'] = df_otp['order_date'].dt.strftime('%Y-%m')
+
+    # if user_response == 'yes':
+        # Update df_otp with user-provided data
+    for generic_label, actual_month in month_mapping.items():
+        mask = (df_otp['order_month'] == actual_month)
+        if any(mask):
+            df_otp.loc[mask, 'Spends_Meta'] = spends_df_otp.at[generic_label, 'Spends_Meta']
+            df_otp.loc[mask, 'Spends_Google'] = spends_df_otp.at[generic_label, 'Spends_Google']
+            df_otp.loc[mask, 'Spends_Amazon'] = spends_df_otp.at[generic_label, 'Spends_Amazon']
+            df_otp.loc[mask, 'Spends_Audio_SponCon'] = spends_df_otp.at[generic_label, 'Spends_Audio_SponCon']
+            df_otp.loc[mask, 'Spends_partnerships'] = spends_df_otp.at[generic_label, 'Spends_partnerships']
+            df_otp.loc[mask, 'Spends_Others'] = spends_df_otp.at[generic_label, 'Spends_Others']
+    print("Spends data has been updated successfully.")
+    # else:
+    #     print("Using default spends data.")
+
+    df_otp.drop(columns=['order_month'], inplace=True)
+    
+
+
     df_amaotp = create_transformed_df_otp(df_otp, 'Amazon')
 
     df_amaotp['order_date'] = pd.to_datetime(df_amaotp['order_date'])
@@ -840,7 +955,8 @@ def load_and_process_data():
     # Display the result
     final_preds_df_com_agg = final_summed_df_dotcom.copy()
 
-    final_preds_df_com_agg = final_preds_df_com_agg[final_preds_df_com_agg['SKU'] != '850030796080']
+    skus_to_exclude = ['850030796080', '850030796349', 'PR300BOTTLE-B5']
+    final_preds_df_com_agg = final_preds_df_com_agg[~final_preds_df_com_agg['SKU'].isin(skus_to_exclude)]
     final_preds_df_com_agg
 
     # Append the two DataFrames vertically
@@ -862,5 +978,96 @@ def load_and_process_data():
     final_preds_df_com_agg = filter_to_current_and_next_months(final_preds_df_com_agg)
     final_preds_df_ama_agg = filter_to_current_and_next_months(final_preds_df_ama_agg)
 
-    return final_preds_df_com_agg , final_preds_df_ama_agg
+    # Create a DataFrame with SKU ID and Product Name - Final
+    comskulist = pd.DataFrame({
+        'SKU': [
+            '850030796042', '850243008918', '850243008796', '850030796097', '850030796035', 
+            '850030796172', '850030796226', '850030796257', '850243008949', '850243008956', 
+            '850030796165', '850030796028', '850030796066', '850243008932', '850030796134', 
+            '850030796288', '850243008888', '850243008345', '850030796011', '850243008598', 
+            '850030796158', '850243008901', '850014080730', '850243008789', '850243008406', 
+            'COLL10Bundle', '850030796240', '850030796196', '850030796202', '850243008109', 
+            '850030796233', 'CHOCRECOVERY14', '850243008208', '850243008192', 'VANRECOVERY14', 
+            '850030796073', '850243008970', '850030796189', '850030796271', '850030796059', 
+            '850243008987', '3xTongkat', '850243008925', 'PR300BOTTLE-BCOS', 'PRSTARTER5', 
+            'PRPACKET5-DCOS', 'PRLEVELUPWBB', 'COLLPOWSHOTBNDL', 'AMPMAG', 'PRCollagen', 
+            'DM2MIX12', 'PR300BOTTLE-B'
+        ],
+        'product_name': [
+            'Magnesium L-Threonate_', 'Omega-3_', 'Creatine_', 'Apigenin_', 'L-Theanine_', 
+            'Zinc_', 'Collagen Peptides_', 'Inositol_', 'Whey Protein Isolate_Chocolate - NSF Sport', 
+            'Multivitamin_', 'Sleep_', 'Alpha GPC_', 'Tyrosine_', 'Whey Protein Isolate_Vanilla -  NSF Sport', 
+            'Whey Protein Isolate_Unflavored', 'Rhodiola Rosea_', 'Essential Plant-Based Protein_Chocolate', 
+            'Brain Drive_60 Capsules', 'L-Glutamine_', 'Recovery_Chocolate', 'Resveratrol_', 
+            'Essential Plant-Based Protein_Vanilla Chai', 'Collagen Shot_', 'Recovery_Vanilla', 
+            'Whey Protein Isolate_Piedmont Chocolate 24 packet bundle', 'Collagen Peptides_', 
+            'Fuel_Cherry Berry / 12 Single Serving Packets', 'Fuel_Strawberry Lime', 'Fuel_Cherry Berry', 
+            'Whey Protein Isolate_Veracruz Vanilla 24 packet bundle', 'Fuel_Strawberry Lime / 12 Single Serving Packets', 
+            'Recovery_Chocolate 14 pack bundle', 'Essential Plant-Based Protein_14 S - Piedmont Chocolate', 
+            'Essential Plant-Based Protein_14 S - Vanilla Chai', 'Recovery_Vanilla 14 pack bundle', 
+            'Tongkat Ali_', 'Vitamin D_60 serving', 'Magnesium Malate_', 'Vital Aminos_', 'Acetyl L-Carnitine_', 
+            'Turmeric_30 serving', 'Tongkat Ali_3 Bottle Value Pack', 'Elite Sleep_', 'PR Lotion_', 
+            'PR Lotion_', 'PR Lotion_', 'PR Lotion_', 'Other_', 'Magnesium Malate_120 Capsules, 60 Day Supply', 
+            'PR Lotion_', 'Fuel_28g of Carbs per Serving, Box of 12 Servings (Mixed Pack:Cherry Berry and Strawberry Lime)', 
+            'PR Lotion_'
+        ]
+    })
+
+    # Merge product names into the final_preds_df_com_agg
+    final_preds_df_com_agg = pd.merge(
+        final_preds_df_com_agg, 
+        comskulist[['SKU', 'product_name']],  # Only merging SKU and product_name from comskulist
+        how='left', 
+        on='SKU'  # Merge on SKU without creating duplicates
+    )
+
+    columns_order = ['SKU', 'product_name'] + [col for col in final_preds_df_com_agg.columns if col not in ['SKU', 'product_name']]
+    final_preds_df_com_agg = final_preds_df_com_agg[columns_order]
+
+    amaskulist = pd.DataFrame({
+    'SKU': [
+        'MOMENTOUS-HUB-MGLT', 'AMPMCR', 'ZH-21DU-JGJX', 'AMPMCP', 'MEWPI24CHOC', 
+        'MEWPI24VAN', 'MOMENTOUS-HUB-LTHE', 'MHZNPIC', 'MHMINO', 'MHRRE', 
+        '850243008956', 'MOMENTOUS-HUB-AGPC', 'I6-8ZCT-FF3T', '1G-SLUS-FC7I', 
+        'MOMENTOUS-HUB-TYR', '8S-5QPR-VPEQ', 'MHSLEEP', 'SH-4MF1-GY9W', 
+        'MOMENTOUS-HUB-APG', 'MOMENTOUS-HUB-LGLX', '3D-FIWI-VDOX', 'OF-GD7N-LW9Q', 
+        'MSRV', 'MDMF15ST', 'MDMF15BE', 'MDMF12ST', 'MDMF12BE', 'MOMENTOUS-HUB-TONG', 
+        'MOMENTOUS-HUB-FADO', 'PR300BOTTLE-A-stickerless', '850243008970', 
+        'MAMINOS', 'G0-NF7M-4HDP', 'MOMENTOUS-HUB-ACAR', '850243008987', 
+        'PRPACKET5-CA', 'MOMENTOUS-APG', 'T4-YDUJ-ZG1F', 'MOMENTOUS-ASHWA'
+    ],
+    'product_name': [
+        'Magnesium L-Threonate_30 Servings', 'Creatine_Creatine (5 Grams Per Serving)', 'Omega-3_', 
+        'Collagen Peptides_30 Servings', 'Whey Protein Isolate_24 Servings (Chocolate)', 
+        'Whey Protein Isolate_24 Servings (Vanilla)', 'L-Theanine_60 Servings', 'Zinc_60 Servings', 
+        'Inositol_60 Servings', 'Rhodiola Rosea_60 Servings', 'Multivitamin_', 'Alpha GPC_60 Servings', 
+        'Recovery_15 Servings (Chocolate)', 'Essential Plant-Based Protein_', 'Tyrosine_60 Servings', 
+        'Essential Plant-Based Protein_', 'Sleep_30 Servings', 'Brain Drive_30 Servings/60 Capsules', 
+        'Apigenin_', 'L-Glutamine_60 Servings', 'Recovery_15 Servings (Vanilla)', 'Collagen Shot_15 Servings', 
+        'Resveratrol_30 Servings', 'Fuel_15 Serving Bag, Strawberry Lime', 'Fuel_15 Serving Bag, Cherry Berry', 
+        'Fuel_12 Single Serving Packets, Strawberry Lime', 'Fuel_12 Single Serving Packets, Cherry Berry', 
+        'Tongkat Ali_', 'Fadogia Agrestis_60 Servings', 'PR Lotion_Bottle (300g)', 'Vitamin D_60 serving', 
+        'Vital Aminos_BCAA & EAA, Tropical Punch, 30 Servings', 'Elite Sleep_30 Servings', 
+        'Acetyl L-Carnitine_60 Servings', 'Turmeric_30 serving', 'PR Lotion_', 'Apigenin_', 
+        'Whey Protein Isolate_24 Servings Per Pouch (Vanilla)', 'Ashwagandha_'
+        ]
+    })
+
+    # Merge product names into the final_preds_df_ama_agg
+    final_preds_df_ama_agg = pd.merge(
+        final_preds_df_ama_agg, 
+        amaskulist[['SKU', 'product_name']],  # Only merging SKU and product_name from comskulist
+        how='left', 
+        on='SKU'  # Merge on SKU without creating duplicates
+    )
+
+    columns_order = ['SKU', 'product_name'] + [col for col in final_preds_df_ama_agg.columns if col not in ['SKU', 'product_name']]
+    final_preds_df_ama_agg = final_preds_df_ama_agg[columns_order]
+
+    # Now final_preds_df_ama_agg has the product names included
+    final_preds_df_ama_agg
+
+
+
+    return final_preds_df_com_agg.round(0) , final_preds_df_ama_agg.round(0)
 
