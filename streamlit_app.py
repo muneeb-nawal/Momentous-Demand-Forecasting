@@ -236,7 +236,7 @@ def custom_header():
     # Handle logout action
     if st.session_state.get('widget_value') == 'logout':
         st.session_state.logged_in = False
-        st.experimental_rerun()
+        st.rerun()
 
 # Login page
 def login_page():
@@ -249,7 +249,7 @@ def login_page():
         if st.button("Login"):
             if email == "saras@livemomentous.com" and password == "df-saras123":
                 st.session_state.logged_in = True
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Incorrect email or password. Please try again.")
 
@@ -328,7 +328,7 @@ def main_app():
             st.session_state.final_preds_df_com_agg = final_preds_df_com_agg
             st.session_state.final_preds_df_ama_agg = final_preds_df_ama_agg
         st.success('Predictions are now available!')
-        st.experimental_rerun()
+        st.rerun()
 
     # Display Results
     if st.session_state.get('predictions_available', False):
