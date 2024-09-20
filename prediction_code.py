@@ -9,7 +9,7 @@ import pickle
 import logging
 import warnings
 import joblib
-import re
+import regex as re
 
 # Ignore all warnings
 warnings.filterwarnings('ignore')
