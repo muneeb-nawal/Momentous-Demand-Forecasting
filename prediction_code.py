@@ -9,6 +9,7 @@ import pickle
 import logging
 import warnings
 import joblib
+import re
 
 # Ignore all warnings
 warnings.filterwarnings('ignore')
@@ -33,6 +34,8 @@ def create_transformed_df(df, sales_channel):
 
     # Filter the DataFrame based on the sales_channel
     filtered_df = df_copy[df_copy['sales_channel'] == sales_channel]
+    filtered_df.fillna(0,inplace=True)
+
     
     # Apply transformations for each unique product
     transformed_dfs = []
@@ -141,14 +144,21 @@ def process_products_by_name(df_dotcom):
 
 # 5. Model Prediction
 
+
+
 def find_model_file(directory, key):
     """
-    Find the appropriate model file based on the key.
+    Find the appropriate model file based on the key pattern.
+    Example of key pattern: 'key_M*.pkl' where * represents any sequence.
     """
     try:
+        # Create a regex pattern based on the key (for example, key_M*.pkl)
+        pattern = re.compile(f"{key}_M.*\.pkl")
+
         all_files = os.listdir(directory)
         for file_name in all_files:
-            if key in file_name and file_name.endswith('.pkl'):
+            # Match files based on the constructed pattern
+            if pattern.match(file_name):
                 return os.path.join(directory, file_name)
         return None
 
@@ -272,6 +282,9 @@ def create_transformed_df_otp(df, sales_channel):
 
         # Filter the DataFrame based on the sales_channel
         filtered_df = df_copy[df_copy['sales_channel'] == sales_channel]
+
+        filtered_df.fillna(0,inplace=True)
+
         
         # Apply transformations for each unique product
         transformed_dfs = []
@@ -766,7 +779,7 @@ def load_and_process_data(marketing_data):
 
     # Define the path to the best models and the forecast data
     best_models_path = "best models amazon OTP"
-    forecast_data = df_amaotp[df_amaotp.order_date>=pd.to_datetime("2024-09-01")]
+    forecast_data = df_amaotp[df_amaotp.order_date >= pd.to_datetime("2024-09-01")]
 
     # Initialize an empty DataFrame to store results
     results_df = pd.DataFrame()
@@ -780,36 +793,46 @@ def load_and_process_data(marketing_data):
         sku_id = int(model_parts[2]) if model_parts[2].isdigit() else model_parts[2]
         product_name = model_parts[3].split('.')[0]
 
-        # Skip models for a specific product
-        if product_name == "Fadogia Agrestis":
+        # Skip models for specific products
+        if product_name in ["Fadogia Agrestis", "Apigenin"]:
             continue
 
         # Filter the forecast data for the current SKU
         sku_data = forecast_data[forecast_data.Sku == sku_id].copy()
-
-        # Remove duplicate entries based on 'order_date'
         sku_data.drop_duplicates(subset=['order_date'], inplace=True)
 
-        # Load the trained model
-        model = joblib.load(model_path)
-        feature_columns = model.feature_names_in_
+        try:
+            # Load the model
+            model = joblib.load(model_path)
+            
+            # Determine feature columns based on model type
+            if 'LGBM' in str(type(model)):
+                feature_columns = model.booster_.feature_name()
+            elif 'RandomForest' in str(type(model)) or 'XGB' in str(type(model)):
+                feature_columns = model.feature_names_in_
+            else:
+                logging.warning(f"Unknown model type for SKU: {sku_id} and product: {product_name}")
+                continue
 
-        # Prepare the data for prediction
-        prediction_data = sku_data[feature_columns]
+            # Prepare the data for prediction
+            prediction_data = sku_data[feature_columns]
 
-        # Create a temporary DataFrame for storing predictions
-        temp_df = pd.DataFrame()
-        temp_df['order_date'] = sku_data['order_date']
-        temp_df['units_sold'] = model.predict(prediction_data)
-        temp_df.set_index('order_date', inplace=True)
+            # Create a temporary DataFrame for storing predictions
+            temp_df = pd.DataFrame()
+            temp_df['order_date'] = sku_data['order_date']
+            temp_df['units_sold'] = model.predict(prediction_data)
+            temp_df.set_index('order_date', inplace=True)
 
-        # Resample the data to end of month frequency and reset index
-        temp_df = temp_df.resample('M').sum().reset_index()
-        temp_df['Sku'] = sku_id
-        temp_df['product_name'] = product_name
+            # Resample the data to end of month frequency and reset index
+            temp_df = temp_df.resample('M').sum().reset_index()
+            temp_df['Sku'] = sku_id
+            temp_df['product_name'] = product_name
 
-        # Append the results to the final DataFrame
-        results_df = pd.concat([results_df, temp_df], ignore_index=True)
+            # Append the results to the final DataFrame
+            results_df = pd.concat([results_df, temp_df], ignore_index=True)
+
+        except Exception as e:
+            logging.error(f"Error processing model {model_path}: {e}")
 
         
 
@@ -843,7 +866,8 @@ def load_and_process_data(marketing_data):
     df_dotcomotp.fillna(0,inplace=True)
 
 
-    # Filter forecast data starting from September 1, 2024
+    
+    # Fi# Filter forecast data starting from September 1, 2024
     forecast_data = df_dotcomotp[df_dotcomotp.order_date >= pd.to_datetime("2024-09-01")]
 
     # Path to the directory containing the best models
@@ -863,8 +887,8 @@ def load_and_process_data(marketing_data):
             sku_id = int(sku_id)
         product_name = model_parts[3].split('.')[0]
 
-        # Skip models for a specific product name
-        if product_name == "Fadogia Agrestis":
+        # Skip models for specific product names
+        if product_name in ["Fadogia Agrestis", "Apigenin"]:
             continue
 
         # Filter the forecast data for the current SKU
@@ -875,19 +899,35 @@ def load_and_process_data(marketing_data):
             # Load the model
             model = joblib.load(model_path)
             
-            # Ensure the model has a 'predict' method
-            if not hasattr(model, 'predict'):
-                print(f"Model at {model_path} does not have a 'predict' method.")
+            # Prepare the DataFrame based on the model type
+            if 'LGBM' in str(type(model)):
+                # LightGBM specific handling
+                logging.info(f"Processing LightGBM model for SKU: {sku_id} and product: {product_name}")
+                feature_columns = model.booster_.feature_name()
+            elif 'RandomForest' in str(type(model)) or 'XGB' in str(type(model)):
+                # RandomForest or XGB specific handling
+                logging.info(f"Processing RandomForest/XGB model for SKU: {sku_id} and product: {product_name}")
+                feature_columns = model.feature_names_in_
+            else:
+                logging.warning(f"Unknown model type for SKU: {sku_id} and product: {product_name}")
                 continue
-            
-            # Prepare the feature columns for prediction
-            feature_columns = [col for col in sku_data.columns if col in model.feature_names_in_]
+
+            # Extract relevant columns from the DataFrame for prediction
             prediction_data = sku_data[feature_columns]
 
             # Create a DataFrame for storing predictions
             temp_df = pd.DataFrame()
             temp_df['order_date'] = sku_data['order_date']
-            temp_df['units_sold'] = model.predict(prediction_data)
+            temp_df[['Spends_Meta', 'Spends_Google', 'Spends_Amazon', 'Spends_Audio_SponCon', 
+                    'Spends_partnerships', 'Spends_Others']] = sku_data[['Spends_Meta', 'Spends_Google', 
+                                                                        'Spends_Amazon', 'Spends_Audio_SponCon',
+                                                                        'Spends_partnerships', 'Spends_Others']]
+
+            # Make predictions
+            result = model.predict(prediction_data)
+
+            # Store results in temp DataFrame
+            temp_df['units_sold'] = result
             temp_df.set_index('order_date', inplace=True)
 
             # Resample the data to end-of-month frequency and reset index
@@ -899,9 +939,25 @@ def load_and_process_data(marketing_data):
             results_df = pd.concat([results_df, temp_df], ignore_index=True)
 
         except AttributeError as e:
-            print(f"AttributeError with model {model_path}: {e}")
+            logging.error(f"AttributeError with model {model_path}: {e}")
         except Exception as e:
-            print(f"Error processing model {model_path}: {e}")
+            logging.error(f"Error processing model {model_path}: {e}")
+
+    # Multiplier adjustments based on specific SKU and dates
+    multiplier = {
+        850243008918: [{pd.to_datetime("2024-11-01"): 1.56}],
+        850030796288: [{pd.to_datetime("2024-11-01"): 1.78}, {pd.to_datetime("2024-06-01"): 1.242}],
+        850243008925: [{pd.to_datetime("2024-11-01"): 1.66}],
+        850243008956: [{pd.to_datetime("2024-11-01"): 1.96}]
+    }
+
+    # Apply multipliers
+    for sku_id, date_multiplier_list in multiplier.items():
+        for date_multiplier in date_multiplier_list:
+            for order_date, multiplier_value in date_multiplier.items():
+                condition = (results_df['Sku'] == sku_id) & (results_df['order_date'] == order_date)
+                results_df.loc[condition, 'units_sold'] = results_df.loc[condition, 'units_sold'] * multiplier_value
+                logging.info(f"Applied multiplier {multiplier_value} for SKU: {sku_id} on {order_date}")
 
     # Pivot the DataFrame to wide format
     result_df1 = pd.pivot_table(data=results_df, index='Sku', columns='order_date', values='units_sold')
@@ -928,18 +984,7 @@ def load_and_process_data(marketing_data):
 
     # Ensure SKU column is cleaned (remove any leading/trailing spaces, etc.)
     final_preds_df_dotcomsubs_agg['SKU'] = final_preds_df_dotcomsubs_agg['SKU'].str.strip()
-    final_preds_df_comotp_agg['SKU'] = final_preds_df_comotp_agg['SKU'].str.strip()
-
-    # Append the two DataFrames
-    combined_df_otp_agg = pd.concat([final_preds_df_dotcomsubs_agg, final_preds_df_comotp_agg])
-
-    # Ensure date columns are numeric (convert to numeric if needed)
-    date_columns = combined_df_otp_agg.columns.drop('SKU')  # Assuming all other columns are dates
-
-    combined_df_otp_agg[date_columns] = combined_df_otp_agg[date_columns].apply(pd.to_numeric, errors='coerce')
-
-    # Group by SKU and sum all the numeric columns (date columns)
-    final_summed_df = combined_df_otp_agg.groupby('SKU').sum().reset_index()
+    final_preds_df_comotp_agg['SKU'] = final_preds_df_comotp_agg['SKU'].astype(str)
 
     # Append the two DataFrames vertically
     combined_df_dotcom = pd.concat([final_preds_df_dotcomsubs_agg, final_preds_df_comotp_agg])
@@ -958,6 +1003,22 @@ def load_and_process_data(marketing_data):
     skus_to_exclude = ['850030796080', '850030796349', 'PR300BOTTLE-B5']
     final_preds_df_com_agg = final_preds_df_com_agg[~final_preds_df_com_agg['SKU'].isin(skus_to_exclude)]
     final_preds_df_com_agg
+
+    # Ensure SKU column is cleaned (remove any leading/trailing spaces, etc.)
+    final_preds_df_amasubs_agg['SKU'] = final_preds_df_amasubs_agg['SKU'].str.strip()
+    final_preds_df_amaotp_agg['SKU'] = final_preds_df_amaotp_agg['SKU'].astype(str)
+
+    # Append the two DataFrames
+    # combined_df_ama_agg = pd.concat([final_preds_df_amasubs_agg, final_preds_df_amaotp_agg])
+
+    # # Ensure date columns are numeric (convert to numeric if needed)
+    # date_columns = combined_df_ama_agg.columns.drop('SKU')  # Assuming all other columns are dates
+
+    # combined_df_ama_agg[date_columns] = combined_df_ama_agg[date_columns].apply(pd.to_numeric, errors='coerce')
+
+    # # Group by SKU and sum all the numeric columns (date columns)
+    # final_summed_df = combined_df_ama_agg.groupby('SKU').sum().reset_index()
+
 
     # Append the two DataFrames vertically
     combined_df_ama = pd.concat([final_preds_df_amasubs_agg, final_preds_df_amaotp_agg])
