@@ -10,6 +10,19 @@ import logging
 import warnings
 import joblib
 import regex as re
+import importlib
+
+
+def get_joblib(version):
+    spec = importlib.util.find_spec("joblib")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+joblib_1_2_0 = get_joblib("1.2.0")
+joblib_1_4_2 = get_joblib("1.4.2")
+
 
 # Ignore all warnings
 warnings.filterwarnings('ignore')
@@ -325,6 +338,12 @@ def filter_to_current_and_next_months(df, num_months=5):
     # Format the current month as 'YYYY-MM-01'
     current_month = today.strftime('%Y-%m-01')
 
+    # Identify columns that are not 'SKU' or 'product_name'
+    numeric_columns = [col for col in df.columns if col not in ['SKU', 'product_name']]
+    
+    # Replace negative values with zero in these columns
+    df[numeric_columns] = df[numeric_columns].clip(lower=0)
+
     # Create a list of all columns
     columns = df.columns
 
@@ -404,9 +423,25 @@ def load_and_process_data(marketing_data):
             df_subs.loc[mask, 'platform_spends'] = spends_df_subs.at[generic_label, 'platform_spends']
             df_subs.loc[mask, 'promotional_spends'] = spends_df_subs.at[generic_label, 'promotional_spends']
             df_subs.loc[mask, 'Amazon_spends'] = spends_df_subs.at[generic_label, 'Amazon_spends']
+        
     print("Spends data has been updated successfully.")
-    # else:
-    #     print("Using default spends data.")
+        # else:
+        #     print("Using default spends data.")
+
+    # Verify the update by printing a summary of the updated data
+    print("\nVerification of Updated Spends Data:")
+    verification_df = df_subs[df_subs['age'] == 0].groupby('acquisition_month_sku_level').agg({
+        'platform_spends': 'first',
+        'promotional_spends': 'first',
+        'Amazon_spends': 'first'
+    }).reset_index()
+
+    # Sort the DataFrame by acquisition_month_sku_level
+    verification_df = verification_df.sort_values('acquisition_month_sku_level')
+
+    # Display the verification DataFrame
+    print(verification_df.to_string(index=False))
+    
 
 
     # Create CSVs for Amazon sales channel
@@ -982,6 +1017,11 @@ def load_and_process_data(marketing_data):
 
     final_preds_df_amaotp_agg.rename(columns={'Sku': 'SKU'}, inplace=True)
 
+    final_preds_df_dotcomsubs_agg = filter_to_current_and_next_months(final_preds_df_dotcomsubs_agg)
+    final_preds_df_comotp_agg = filter_to_current_and_next_months(final_preds_df_comotp_agg)
+    final_preds_df_amasubs_agg = filter_to_current_and_next_months(final_preds_df_amasubs_agg)
+    final_preds_df_amaotp_agg = filter_to_current_and_next_months(final_preds_df_amaotp_agg)
+
     # Ensure SKU column is cleaned (remove any leading/trailing spaces, etc.)
     final_preds_df_dotcomsubs_agg['SKU'] = final_preds_df_dotcomsubs_agg['SKU'].str.strip()
     final_preds_df_comotp_agg['SKU'] = final_preds_df_comotp_agg['SKU'].astype(str)
@@ -1038,6 +1078,9 @@ def load_and_process_data(marketing_data):
     
     final_preds_df_com_agg = filter_to_current_and_next_months(final_preds_df_com_agg)
     final_preds_df_ama_agg = filter_to_current_and_next_months(final_preds_df_ama_agg)
+    
+
+
 
     # Create a DataFrame with SKU ID and Product Name - Final
     comskulist = pd.DataFrame({
@@ -1130,5 +1173,7 @@ def load_and_process_data(marketing_data):
 
 
 
-    return final_preds_df_com_agg.round(0) , final_preds_df_ama_agg.round(0)
+    return final_preds_df_com_agg.round(0), final_preds_df_ama_agg.round(0), \
+           final_preds_df_dotcomsubs_agg.round(0), final_preds_df_comotp_agg.round(0), \
+           final_preds_df_amasubs_agg.round(0), final_preds_df_amaotp_agg.round(0)
 
