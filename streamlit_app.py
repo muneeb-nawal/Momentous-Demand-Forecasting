@@ -3,7 +3,7 @@ import pandas as pd
 import base64
 from io import BytesIO
 import time
-from prediction_code import load_and_process_data
+from prediction_code_with_otpsub import load_and_process_data
 
 # Set page config
 st.set_page_config(page_title="Momentous Demand Forecast Tool", layout="wide")
@@ -160,10 +160,24 @@ def main_app():
         })
 
     if spend_option == "Custom Spends":
+        # st.info("Note: Due to how Streamlit handles state updates, you may need to edit a value twice for it to be reflected. After making your changes, please click the 'Confirm Custom Spends' button below to ensure all updates are saved.")
+        
+        st.markdown("""
+        <div style='background-color: #f0f2f6; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
+        <h4 style='margin-top: 0;'>Note:</h4>
+        <ul>
+            <li>Enter your custom spend values in the table below.</li>
+            <li>All changes are automatically saved.</li>
+            <li>If a value doesn't update immediately, try editing it again.</li>
+            <li>Click 'Generate Results' when you're ready to use the custom spends.</li>
+        </ul>
+        </div>
+        """, unsafe_allow_html=True)
         edited_df = st.data_editor(
             st.session_state.marketing_data, 
             num_rows="fixed",
             hide_index=True,
+            key="custom_spends_editor",
             column_config={
                 "Channel": st.column_config.TextColumn(
                     "Marketing Channels",
@@ -179,21 +193,26 @@ def main_app():
                 ) for month in months}
             }
         )
-        st.session_state.marketing_data = edited_df
+        
+        # if st.button("Confirm Custom Spends"):
+        #     st.session_state.marketing_data = edited_df
+        #     st.success("Custom spends have been updated successfully!")
 
     # Generate Results button
     if st.button('Generate Results'):
         with st.spinner('Running predictions... This may take some time.'):
-            # Convert DataFrame to numeric, excluding the 'Channel' column
             numeric_df = st.session_state.marketing_data.copy()
             numeric_df[months] = numeric_df[months].apply(pd.to_numeric, errors='coerce')
             
-            final_preds_df_com_agg, final_preds_df_ama_agg = load_and_process_data(numeric_df)
+            final_preds_df_com_agg, final_preds_df_ama_agg, final_preds_df_comsubs, final_preds_df_comotp, final_preds_df_amasubs, final_preds_df_amaotp = load_and_process_data(numeric_df)
             st.session_state.predictions_available = True
             st.session_state.final_preds_df_com_agg = final_preds_df_com_agg
             st.session_state.final_preds_df_ama_agg = final_preds_df_ama_agg
+            st.session_state.final_preds_df_comsubs = final_preds_df_comsubs
+            st.session_state.final_preds_df_comotp = final_preds_df_comotp
+            st.session_state.final_preds_df_amasubs = final_preds_df_amasubs
+            st.session_state.final_preds_df_amaotp = final_preds_df_amaotp
         st.success('Predictions are now available!')
-        st.rerun()
 
     # Add separator after Generate Results button
     st.markdown("---")
@@ -202,24 +221,60 @@ def main_app():
     if st.session_state.get('predictions_available', False):
         st.markdown("#### Forecast Results")
         
+        # Add radio button for user to choose between aggregated view and breakdown
+        view_option = st.radio("Choose view option:", ("Aggregated", "Breakdown by Subs and OTP"), key="view_option_radio")
+        
         tab1, tab2 = st.tabs([".com Predictions", "Amazon Predictions"])
 
         with tab1:
-            st.dataframe(st.session_state.final_preds_df_com_agg)
-            com_csv = convert_df_to_csv(st.session_state.final_preds_df_com_agg)
-            st.download_button(label="Download .com Predictions as CSV",
-                               data=com_csv,
-                               file_name='com_predictions.csv',
-                               mime='text/csv')
+            if view_option == "Aggregated":
+                st.dataframe(st.session_state.final_preds_df_com_agg)
+                com_csv = convert_df_to_csv(st.session_state.final_preds_df_com_agg)
+                st.download_button(label="Download .com Predictions as CSV",
+                                   data=com_csv,
+                                   file_name='com_predictions_agg.csv',
+                                   mime='text/csv')
+            else:
+                st.subheader("Subscription Predictions")
+                st.dataframe(st.session_state.final_preds_df_comsubs)
+                comsubs_csv = convert_df_to_csv(st.session_state.final_preds_df_comsubs)
+                st.download_button(label="Download .com Subscription Predictions as CSV",
+                                   data=comsubs_csv,
+                                   file_name='com_predictions_subs.csv',
+                                   mime='text/csv')
+                
+                st.subheader("One-Time Purchase Predictions")
+                st.dataframe(st.session_state.final_preds_df_comotp)
+                comotp_csv = convert_df_to_csv(st.session_state.final_preds_df_comotp)
+                st.download_button(label="Download .com OTP Predictions as CSV",
+                                   data=comotp_csv,
+                                   file_name='com_predictions_otp.csv',
+                                   mime='text/csv')
 
         with tab2:
-            st.dataframe(st.session_state.final_preds_df_ama_agg)
-            ama_csv = convert_df_to_csv(st.session_state.final_preds_df_ama_agg)
-            st.download_button(label="Download Amazon Predictions as CSV",
-                               data=ama_csv,
-                               file_name='amazon_predictions.csv',
-                               mime='text/csv')
-
+            if view_option == "Aggregated":
+                st.dataframe(st.session_state.final_preds_df_ama_agg)
+                ama_csv = convert_df_to_csv(st.session_state.final_preds_df_ama_agg)
+                st.download_button(label="Download Amazon Predictions as CSV",
+                                   data=ama_csv,
+                                   file_name='amazon_predictions_agg.csv',
+                                   mime='text/csv')
+            else:
+                st.subheader("Subscription Predictions")
+                st.dataframe(st.session_state.final_preds_df_amasubs)
+                amasubs_csv = convert_df_to_csv(st.session_state.final_preds_df_amasubs)
+                st.download_button(label="Download Amazon Subscription Predictions as CSV",
+                                   data=amasubs_csv,
+                                   file_name='amazon_predictions_subs.csv',
+                                   mime='text/csv')
+                
+                st.subheader("One-Time Purchase Predictions")
+                st.dataframe(st.session_state.final_preds_df_amaotp)
+                amaotp_csv = convert_df_to_csv(st.session_state.final_preds_df_amaotp)
+                st.download_button(label="Download Amazon OTP Predictions as CSV",
+                                   data=amaotp_csv,
+                                   file_name='amazon_predictions_otp.csv',
+                                   mime='text/csv')
     # Footer
     # st.markdown("---")
     st.markdown("**Note**: This app enables you to view and download prediction results. Make sure to upload the latest dataset and model files to ensure up-to-date predictions.")
