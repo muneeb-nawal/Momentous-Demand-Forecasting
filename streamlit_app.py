@@ -3,7 +3,7 @@ import pandas as pd
 import base64
 from io import BytesIO
 import time
-from prediction_code_with_otpsub import load_and_process_data
+from prediction_code import load_and_process_data
 
 # Set page config
 st.set_page_config(page_title="Momentous Demand Forecast Tool", layout="wide")
