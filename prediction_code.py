@@ -1325,6 +1325,23 @@ def load_and_process_data(marketing_data):
     # final_preds_df_amasubs_agg = final_preds_df_amasubs_agg[column_order]
     # final_preds_df_amaotp_agg = final_preds_df_amaotp_agg[column_order]
 
+    current_date = datetime.datetime.now().replace(day=1)
+    next_4_months = [current_date + relativedelta(months=i) for i in range(1, 5)]
+    next_4_months_str = [date.strftime('%Y-%m-01') for date in next_4_months]
+
+    def filter_next_4_months(df):
+        columns_to_keep = ['SKU', 'product_name'] + next_4_months_str
+        return df[columns_to_keep]
+
+    final_preds_df_com_agg = filter_next_4_months(final_preds_df_com_agg)
+    final_preds_df_ama_agg = filter_next_4_months(final_preds_df_ama_agg)
+    final_preds_df_dotcom_new = filter_next_4_months(final_preds_df_dotcom_new)
+    final_preds_df_dotcom_ret = filter_next_4_months(final_preds_df_dotcom_ret)
+    final_preds_df_dotcomsubs_subsplit = filter_next_4_months(final_preds_df_dotcomsubs_subsplit)
+    final_preds_df_ama_new = filter_next_4_months(final_preds_df_ama_new)
+    final_preds_df_ama_ret = filter_next_4_months(final_preds_df_ama_ret)
+    final_preds_df_amasubs_subsplit = filter_next_4_months(final_preds_df_amasubs_subsplit)
+
 
     return final_preds_df_com_agg.round(0), final_preds_df_ama_agg.round(0), \
         final_preds_df_dotcom_new.round(0),final_preds_df_dotcom_ret.round(0),final_preds_df_dotcomsubs_subsplit.round(0),\
