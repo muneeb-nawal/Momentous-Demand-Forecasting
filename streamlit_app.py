@@ -4,6 +4,8 @@ import base64
 from io import BytesIO
 import time
 from prediction_code import load_and_process_data
+import numpy as np
+
 
 # Set page config
 st.set_page_config(page_title="Momentous Demand Forecast Tool", layout="wide")
@@ -134,47 +136,59 @@ def login_page():
                 st.rerun()
             else:
                 st.error("Incorrect email or password. Please try again.")
+def format_currency(value):
+    return f"${value:,.0f}"
 
-                
+def format_channel_name(name):
+    return name.replace('_', ' ')
+
 def main_app():
     custom_header()
 
     st.title("Momentous Demand Forecast Tool")
-    st.markdown("This app allows you to view and download SKU-wise forecasts for units sold on both website (.com) and Amazon sales channels.")
+    st.markdown("This app allows you to view SKU-wise forecasts for units sold on both website (.com) and Amazon sales channels.")
 
-    # Marketing Channels
-    st.subheader("Marketing Channels")
-    spend_option = st.radio("Choose spend option:", ("Default Spends", "Custom Spends"), key="spend_option_radio")
-    
-    channels = ["Spends_Meta", "Spends_Google", "Spends_Amazon", "Spends_Audio_SponCon", "Spends_Partnerships", "Spends_Others"]
-    months = ["current month", "month 1", "month 2", "month 3", "month 4"]
-    
-    if 'marketing_data' not in st.session_state or spend_option == "Default Spends":
-        st.session_state.marketing_data = pd.DataFrame({
-            'Channel': channels,
-            'current month': [76904.46, 169527.61, 214805.7733, 355941.7067, 449181.4467, 7000.0],
-            'month 1': [110000.0, 175000.0, 212215.0, 219228.0, 306728.0, 15000.0],
-            'month 2': [120000.0, 225000.0, 233437.0, 254928.0, 364928.0, 20000.0],
-            'month 3': [85000.0, 175000.0, 256781.0, 224228.0, 331728.0, 65000.0],
-            'month 4': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        })
+    # Initialize run counter if not exists
+    if 'run_counter' not in st.session_state:
+        st.session_state.run_counter = 0
+    if 'view_option' not in st.session_state:
+        st.session_state.view_option = "Split by Sales Channel"
 
-    if spend_option == "Custom Spends":
-        # st.info("Note: Due to how Streamlit handles state updates, you may need to edit a value twice for it to be reflected. After making your changes, please click the 'Confirm Custom Spends' button below to ensure all updates are saved.")
-        
+    # Determine if the expander should be expanded
+    expand_spends = st.session_state.run_counter == 0
+
+    with st.expander("Update Spends for Marketing Channels", expanded=expand_spends):
         st.markdown("""
         <div style='background-color: #f0f2f6; padding: 15px; border-radius: 5px; margin-bottom: 20px;'>
         <h4 style='margin-top: 0;'>Note:</h4>
         <ul>
-            <li>Enter your custom spend values in the table below.</li>
+            <li>The table below shows the default spend values.</li>
+            <li>You can edit these values directly in the table if you wish to customize them.</li>
             <li>All changes are automatically saved.</li>
             <li>If a value doesn't update immediately, try editing it again.</li>
-            <li>Click 'Generate Results' when you're ready to use the custom spends.</li>
+            <li>Click 'Generate Results' when you're ready to proceed with the current spend values.</li>
         </ul>
         </div>
         """, unsafe_allow_html=True)
+        
+        channels = ["Spends_Meta", "Spends_Google", "Spends_Amazon", "Spends_Audio_SponCon", "Spends_Partnerships", "Spends_Others"]
+        months = ["current month", "month 1", "month 2", "month 3", "month 4"]
+        
+        if 'marketing_data' not in st.session_state:
+            st.session_state.marketing_data = pd.DataFrame({
+                'Channel': channels,
+                'current month': [76904.46, 169527.61, 214805.7733, 355941.7067, 449181.4467, 7000.0],
+                'month 1': [110000.0, 175000.0, 212215.0, 219228.0, 306728.0, 15000.0],
+                'month 2': [120000.0, 225000.0, 233437.0, 254928.0, 364928.0, 20000.0],
+                'month 3': [85000.0, 175000.0, 256781.0, 224228.0, 331728.0, 65000.0],
+                'month 4': [85000.0, 175000.0, 256781.0, 224228.0, 331728.0, 65000.0]
+            })
+
+        display_df = st.session_state.marketing_data.copy()
+        display_df['Channel'] = display_df['Channel'].apply(lambda x: x.replace('_', ' '))
+        
         edited_df = st.data_editor(
-            st.session_state.marketing_data, 
+            display_df,
             num_rows="fixed",
             hide_index=True,
             key="custom_spends_editor",
@@ -184,105 +198,97 @@ def main_app():
                     width="medium",
                     required=True,
                 ),
-                **{month: st.column_config.NumberColumn(
-                    month,
+                **{col: st.column_config.NumberColumn(
+                    col,
                     min_value=0.0,
                     max_value=1000000.0,
                     step=0.01,
-                    format="%.2f"
-                ) for month in months}
-            }
+                    format="$%.0f"
+                ) for col in months}
+            },
+            disabled=["Channel"]
         )
         
-        # if st.button("Confirm Custom Spends"):
-        #     st.session_state.marketing_data = edited_df
-        #     st.success("Custom spends have been updated successfully!")
+        st.session_state.marketing_data[months] = edited_df[months]
 
     # Generate Results button
+    if st.session_state.run_counter > 0:
+        st.warning("⚠️ Warning: Proceeding with generate results operation will overwrite the current results. Please ensure that you have saved the results before continuing.")
+
     if st.button('Generate Results'):
         with st.spinner('Running predictions... This may take some time.'):
             numeric_df = st.session_state.marketing_data.copy()
             numeric_df[months] = numeric_df[months].apply(pd.to_numeric, errors='coerce')
             
-            final_preds_df_com_agg, final_preds_df_ama_agg, final_preds_df_comsubs, final_preds_df_comotp, final_preds_df_amasubs, final_preds_df_amaotp = load_and_process_data(numeric_df)
+            final_preds_df_com_agg, final_preds_df_ama_agg, \
+            final_preds_df_dotcom_new, final_preds_df_dotcom_ret, final_preds_df_dotcomsubs_subsplit, \
+            final_preds_df_ama_new, final_preds_df_ama_ret, final_preds_df_amasubs_subsplit = load_and_process_data(numeric_df)
+
             st.session_state.predictions_available = True
             st.session_state.final_preds_df_com_agg = final_preds_df_com_agg
             st.session_state.final_preds_df_ama_agg = final_preds_df_ama_agg
-            st.session_state.final_preds_df_comsubs = final_preds_df_comsubs
-            st.session_state.final_preds_df_comotp = final_preds_df_comotp
-            st.session_state.final_preds_df_amasubs = final_preds_df_amasubs
-            st.session_state.final_preds_df_amaotp = final_preds_df_amaotp
+            st.session_state.final_preds_df_dotcom_new = final_preds_df_dotcom_new
+            st.session_state.final_preds_df_dotcom_ret = final_preds_df_dotcom_ret
+            st.session_state.final_preds_df_dotcomsubs_subsplit = final_preds_df_dotcomsubs_subsplit
+            st.session_state.final_preds_df_ama_new = final_preds_df_ama_new
+            st.session_state.final_preds_df_ama_ret = final_preds_df_ama_ret
+            st.session_state.final_preds_df_amasubs_subsplit = final_preds_df_amasubs_subsplit
+            st.session_state.run_counter += 1
         st.success('Predictions are now available!')
+        st.rerun()  # Use experimental_rerun() instead of rerun()
 
-    # Add separator after Generate Results button
     st.markdown("---")
 
     # Display Results
     if st.session_state.get('predictions_available', False):
         st.markdown("#### Forecast Results")
         
-        # Add radio button for user to choose between aggregated view and breakdown
-        view_option = st.radio("Choose view option:", ("Aggregated", "Breakdown by Subs and OTP"), key="view_option_radio")
+        st.markdown("**🔔 Important: To save your results, please use the download functionality in each table. Results are not automatically saved.**")
         
+        # Move the radio button outside of the if statement
+        st.session_state.view_option = st.radio(
+            "Choose view option:", 
+            ("Split by Sales Channel", "Split by Order Type"), 
+            key="view_option_radio",
+            index=0 if st.session_state.view_option == "Split by Sales Channel" else 1
+        )
+
         tab1, tab2 = st.tabs([".com Predictions", "Amazon Predictions"])
 
+        def display_dataframe_with_totals(df):
+            df_display = df.copy()
+            df_display['Total'] = df_display.select_dtypes(include=[np.number]).sum(axis=1)
+            df_display = df_display.sort_values('Total', ascending=False).reset_index(drop=True)
+            numeric_cols = df_display.select_dtypes(include=[np.number]).columns
+            df_display[numeric_cols] = df_display[numeric_cols].applymap(lambda x: f"{x:,.0f}")
+            if 'Channel' in df_display.columns:
+                df_display['Channel'] = df_display['Channel'].apply(lambda x: x.replace('_', ' '))
+            st.dataframe(df_display)
+
         with tab1:
-            if view_option == "Aggregated":
-                st.dataframe(st.session_state.final_preds_df_com_agg)
-                com_csv = convert_df_to_csv(st.session_state.final_preds_df_com_agg)
-                st.download_button(label="Download .com Predictions as CSV",
-                                   data=com_csv,
-                                   file_name='com_predictions_agg.csv',
-                                   mime='text/csv')
+            if st.session_state.view_option == "Split by Sales Channel":
+                display_dataframe_with_totals(st.session_state.final_preds_df_com_agg)
             else:
-                st.subheader("Subscription Predictions")
-                st.dataframe(st.session_state.final_preds_df_comsubs)
-                comsubs_csv = convert_df_to_csv(st.session_state.final_preds_df_comsubs)
-                st.download_button(label="Download .com Subscription Predictions as CSV",
-                                   data=comsubs_csv,
-                                   file_name='com_predictions_subs.csv',
-                                   mime='text/csv')
-                
-                st.subheader("One-Time Purchase Predictions")
-                st.dataframe(st.session_state.final_preds_df_comotp)
-                comotp_csv = convert_df_to_csv(st.session_state.final_preds_df_comotp)
-                st.download_button(label="Download .com OTP Predictions as CSV",
-                                   data=comotp_csv,
-                                   file_name='com_predictions_otp.csv',
-                                   mime='text/csv')
+                st.subheader("New Customer Predictions")
+                display_dataframe_with_totals(st.session_state.final_preds_df_dotcom_new)
+                st.subheader("Returning Customer Predictions")
+                display_dataframe_with_totals(st.session_state.final_preds_df_dotcom_ret)
+                st.subheader("Subscription Customer Predictions")
+                display_dataframe_with_totals(st.session_state.final_preds_df_dotcomsubs_subsplit)
 
         with tab2:
-            if view_option == "Aggregated":
-                st.dataframe(st.session_state.final_preds_df_ama_agg)
-                ama_csv = convert_df_to_csv(st.session_state.final_preds_df_ama_agg)
-                st.download_button(label="Download Amazon Predictions as CSV",
-                                   data=ama_csv,
-                                   file_name='amazon_predictions_agg.csv',
-                                   mime='text/csv')
+            if st.session_state.view_option == "Split by Sales Channel":
+                display_dataframe_with_totals(st.session_state.final_preds_df_ama_agg)
             else:
-                st.subheader("Subscription Predictions")
-                st.dataframe(st.session_state.final_preds_df_amasubs)
-                amasubs_csv = convert_df_to_csv(st.session_state.final_preds_df_amasubs)
-                st.download_button(label="Download Amazon Subscription Predictions as CSV",
-                                   data=amasubs_csv,
-                                   file_name='amazon_predictions_subs.csv',
-                                   mime='text/csv')
-                
-                st.subheader("One-Time Purchase Predictions")
-                st.dataframe(st.session_state.final_preds_df_amaotp)
-                amaotp_csv = convert_df_to_csv(st.session_state.final_preds_df_amaotp)
-                st.download_button(label="Download Amazon OTP Predictions as CSV",
-                                   data=amaotp_csv,
-                                   file_name='amazon_predictions_otp.csv',
-                                   mime='text/csv')
-    # Footer
-    # st.markdown("---")
-    st.markdown("**Note**: This app enables you to view and download prediction results. Make sure to upload the latest dataset and model files to ensure up-to-date predictions.")
+                st.subheader("New Customer Predictions")
+                display_dataframe_with_totals(st.session_state.final_preds_df_ama_new)
+                st.subheader("Returning Customer Predictions")
+                display_dataframe_with_totals(st.session_state.final_preds_df_ama_ret)
+                st.subheader("Subscription Customer Predictions")
+                display_dataframe_with_totals(st.session_state.final_preds_df_amasubs_subsplit)
 
 
-# Helper function to convert DataFrame to CSV
-def convert_df_to_csv(df):
-    return df.to_csv(index=False).encode('utf-8')
+    st.markdown("**Note**: This app enables you to view prediction results. Make sure to upload the latest dataset and model files to ensure up-to-date predictions.")
 
 # Main execution
 if __name__ == "__main__":

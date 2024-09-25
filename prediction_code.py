@@ -367,6 +367,26 @@ def filter_to_current_and_next_months(df, num_months=5):
 
     return filtered_df
 
+
+def calculate_m0_m1_split(df, sales_channel):
+    # Filter data for the given sales channel
+    channel_df = df[df['sales_channel'] == sales_channel]
+
+    # Create pivot table
+    pivot = pd.pivot_table(channel_df, values='unit_sold_unbundled', 
+                           index='SKU', columns='age', aggfunc='sum', fill_value=0)
+
+    # Calculate M0 and M1+
+    pivot['M0'] = pivot[0]
+    pivot['M1+'] = pivot.drop(columns=[0, 'M0']).sum(axis=1)
+
+    # Calculate percentages
+    pivot['Total'] = pivot['M0'] + pivot['M1+']
+    pivot['M0%'] = pivot['M0'] / pivot['Total']
+    pivot['M1+%'] = pivot['M1+'] / pivot['Total']
+
+    return pivot[['M0%', 'M1+%']]
+
 # 7. Main Implementation
 
 def load_and_process_data(marketing_data):
@@ -1079,54 +1099,149 @@ def load_and_process_data(marketing_data):
     final_preds_df_com_agg = filter_to_current_and_next_months(final_preds_df_com_agg)
     final_preds_df_ama_agg = filter_to_current_and_next_months(final_preds_df_ama_agg)
     
+    # creating new, returning and subscription split
+        
+
+    com_splits = calculate_m0_m1_split(df_subs, '.com')
+    ama_splits = calculate_m0_m1_split(df_subs, 'Amazon')
+
+    com_splits = com_splits.reset_index()
+    ama_splits = ama_splits.reset_index()
+
+    com_splits['SKU'] = com_splits['SKU'].astype(str)
+
+    # Merge the com_splits to final_preds_df_dotcomsubs_agg to align M0% and M1+% with SKUs
+    merged_df = pd.merge(final_preds_df_dotcomsubs_agg, com_splits, on='SKU')
+
+    # Multiply forecasts by M0% to get final_preds_df_dotcomsubs_firstsubsplit
+    final_preds_df_dotcomsubs_firstsubsplit = merged_df.copy()
+    for col in final_preds_df_dotcomsubs_agg.columns[1:]:
+        final_preds_df_dotcomsubs_firstsubsplit[col] = merged_df[col] * merged_df['M0%']
+
+    # Multiply forecasts by M1+% to get final_preds_df_dotcomsubs_subsplit
+    final_preds_df_dotcomsubs_subsplit = merged_df.copy()
+    for col in final_preds_df_dotcomsubs_agg.columns[1:]:
+        final_preds_df_dotcomsubs_subsplit[col] = merged_df[col] * merged_df['M1+%']
+
+    # Drop M0% and M1+% columns if no longer needed
+    final_preds_df_dotcomsubs_firstsubsplit = final_preds_df_dotcomsubs_firstsubsplit.drop(columns=['M0%', 'M1+%'])
+    final_preds_df_dotcomsubs_subsplit = final_preds_df_dotcomsubs_subsplit.drop(columns=['M0%', 'M1+%'])
+
+    final_preds_df_comotp_agg.set_index('SKU', inplace=True)
+    final_preds_df_dotcomsubs_firstsubsplit.set_index('SKU', inplace=True)
+
+    # Perform the sum while preserving the SKU index
+    final_preds_df_dotcom_new_ret = final_preds_df_comotp_agg.add(final_preds_df_dotcomsubs_firstsubsplit, fill_value=0)
+
+    # Reset the index if you want 'SKU' to be a regular column again
+    final_preds_df_dotcom_new_ret.reset_index(inplace=True)
+
+    # Define your variables
+    var_comnewsplit = 0.459
+    var_comretsplit = 0.541
+
+    # Create a copy to avoid modifying the original DataFrame
+    final_preds_df_dotcom_new = final_preds_df_dotcom_new_ret.copy()
+    final_preds_df_dotcom_ret = final_preds_df_dotcom_new_ret.copy()
+
+    # Identify numeric columns
+    numeric_cols = final_preds_df_dotcom_new_ret.select_dtypes(include='number').columns
+
+    # Multiply numeric columns by the respective variables
+    final_preds_df_dotcom_new[numeric_cols] = final_preds_df_dotcom_new_ret[numeric_cols] * var_comnewsplit
+    final_preds_df_dotcom_ret[numeric_cols] = final_preds_df_dotcom_new_ret[numeric_cols] * var_comretsplit
+
+    ama_splits['SKU'] = ama_splits['SKU'].astype(str)
+
+    # Merge the ama_splits to final_preds_df_amasubs_agg to align M0% and M1+% with SKUs
+    merged_df = pd.merge(final_preds_df_amasubs_agg, ama_splits, on='SKU')
+
+    # Multiply forecasts by M0% to get final_preds_df_amasubs_firstsubsplit
+    final_preds_df_amasubs_firstsubsplit = merged_df.copy()
+    for col in final_preds_df_amasubs_agg.columns[1:]:
+        final_preds_df_amasubs_firstsubsplit[col] = merged_df[col] * merged_df['M0%']
+
+    # Multiply forecasts by M1+% to get final_preds_df_dotcomsubs_subsplit
+    final_preds_df_amasubs_subsplit = merged_df.copy()
+    for col in final_preds_df_amasubs_agg.columns[1:]:
+        final_preds_df_amasubs_subsplit[col] = merged_df[col] * merged_df['M1+%']
+
+    # Drop M0% and M1+% columns if no longer needed
+    final_preds_df_amasubs_firstsubsplit = final_preds_df_amasubs_firstsubsplit.drop(columns=['M0%', 'M1+%'])
+    final_preds_df_amasubs_subsplit = final_preds_df_amasubs_subsplit.drop(columns=['M0%', 'M1+%'])
+
+    final_preds_df_amaotp_agg.set_index('SKU', inplace=True)
+    final_preds_df_amasubs_firstsubsplit.set_index('SKU', inplace=True)
+
+    # Perform the sum while preserving the SKU index
+    final_preds_df_ama_new_ret = final_preds_df_amaotp_agg.add(final_preds_df_amasubs_firstsubsplit, fill_value=0)
+
+    # Reset the index if you want 'SKU' to be a regular column again
+    final_preds_df_ama_new_ret.reset_index(inplace=True)
+
+    # Define your variables
+    var_amanewsplit = 0.459
+    var_amaretsplit = 0.541
+
+    # Create a copy to avoid modifying the original DataFrame
+    final_preds_df_ama_new = final_preds_df_ama_new_ret.copy()
+    final_preds_df_ama_ret = final_preds_df_ama_new_ret.copy()
+
+    # Identify numeric columns
+    numeric_cols = final_preds_df_ama_new_ret.select_dtypes(include='number').columns
+
+    # Multiply numeric columns by the respective variables
+    final_preds_df_ama_new[numeric_cols] = final_preds_df_ama_new_ret[numeric_cols] * var_amanewsplit
+    final_preds_df_ama_ret[numeric_cols] = final_preds_df_ama_new_ret[numeric_cols] * var_amaretsplit
 
 
 
     # Create a DataFrame with SKU ID and Product Name - Final
     comskulist = pd.DataFrame({
-        'SKU': [
-            '850030796042', '850243008918', '850243008796', '850030796097', '850030796035', 
-            '850030796172', '850030796226', '850030796257', '850243008949', '850243008956', 
-            '850030796165', '850030796028', '850030796066', '850243008932', '850030796134', 
-            '850030796288', '850243008888', '850243008345', '850030796011', '850243008598', 
-            '850030796158', '850243008901', '850014080730', '850243008789', '850243008406', 
-            'COLL10Bundle', '850030796240', '850030796196', '850030796202', '850243008109', 
-            '850030796233', 'CHOCRECOVERY14', '850243008208', '850243008192', 'VANRECOVERY14', 
-            '850030796073', '850243008970', '850030796189', '850030796271', '850030796059', 
-            '850243008987', '3xTongkat', '850243008925', 'PR300BOTTLE-BCOS', 'PRSTARTER5', 
-            'PRPACKET5-DCOS', 'PRLEVELUPWBB', 'COLLPOWSHOTBNDL', 'AMPMAG', 'PRCollagen', 
-            'DM2MIX12', 'PR300BOTTLE-B'
-        ],
-        'product_name': [
-            'Magnesium L-Threonate_', 'Omega-3_', 'Creatine_', 'Apigenin_', 'L-Theanine_', 
-            'Zinc_', 'Collagen Peptides_', 'Inositol_', 'Whey Protein Isolate_Chocolate - NSF Sport', 
-            'Multivitamin_', 'Sleep_', 'Alpha GPC_', 'Tyrosine_', 'Whey Protein Isolate_Vanilla -  NSF Sport', 
-            'Whey Protein Isolate_Unflavored', 'Rhodiola Rosea_', 'Essential Plant-Based Protein_Chocolate', 
-            'Brain Drive_60 Capsules', 'L-Glutamine_', 'Recovery_Chocolate', 'Resveratrol_', 
-            'Essential Plant-Based Protein_Vanilla Chai', 'Collagen Shot_', 'Recovery_Vanilla', 
-            'Whey Protein Isolate_Piedmont Chocolate 24 packet bundle', 'Collagen Peptides_', 
-            'Fuel_Cherry Berry / 12 Single Serving Packets', 'Fuel_Strawberry Lime', 'Fuel_Cherry Berry', 
-            'Whey Protein Isolate_Veracruz Vanilla 24 packet bundle', 'Fuel_Strawberry Lime / 12 Single Serving Packets', 
-            'Recovery_Chocolate 14 pack bundle', 'Essential Plant-Based Protein_14 S - Piedmont Chocolate', 
-            'Essential Plant-Based Protein_14 S - Vanilla Chai', 'Recovery_Vanilla 14 pack bundle', 
-            'Tongkat Ali_', 'Vitamin D_60 serving', 'Magnesium Malate_', 'Vital Aminos_', 'Acetyl L-Carnitine_', 
-            'Turmeric_30 serving', 'Tongkat Ali_3 Bottle Value Pack', 'Elite Sleep_', 'PR Lotion_', 
-            'PR Lotion_', 'PR Lotion_', 'PR Lotion_', 'Other_', 'Magnesium Malate_120 Capsules, 60 Day Supply', 
-            'PR Lotion_', 'Fuel_28g of Carbs per Serving, Box of 12 Servings (Mixed Pack:Cherry Berry and Strawberry Lime)', 
-            'PR Lotion_'
-        ]
+    'SKU': [
+        '850030796042', '850243008918', '850243008796', '850030796097', '850030796035', 
+        '850030796172', '850030796226', '850030796257', '850243008949', '850243008956', 
+        '850030796165', '850030796028', '850030796066', '850243008932', '850030796134', 
+        '850030796288', '850243008888', '850243008345', '850030796011', '850243008598', 
+        '850030796158', '850243008901', '850014080730', '850243008789', '850243008406', 
+        'COLL10Bundle', '850030796240', '850030796196', '850030796202', '850243008109', 
+        '850030796233', 'CHOCRECOVERY14', '850243008208', '850243008192', 'VANRECOVERY14', 
+        '850030796073', '850243008970', '850030796189', '850030796271', '850030796059', 
+        '850243008987', '3xTongkat', '850243008925', 'PR300BOTTLE-BCOS', 'PRSTARTER5', 
+        'PRPACKET5-DCOS', 'PRLEVELUPWBB', 'COLLPOWSHOTBNDL', 'AMPMAG', 'PRCollagen', 
+        'DM2MIX12', 'PR300BOTTLE-B'
+    ],
+    'product_name': [
+        'Magnesium L-Threonate', 'Omega-3', 'Creatine', 'Apigenin', 'L-Theanine', 
+        'Zinc', 'Collagen Peptides', 'Inositol', 'Whey Protein Isolate Chocolate - NSF Sport', 
+        'Multivitamin', 'Sleep', 'Alpha GPC', 'Tyrosine', 'Whey Protein Isolate Vanilla -  NSF Sport', 
+        'Whey Protein Isolate Unflavored', 'Rhodiola Rosea', 'Essential Plant-Based Protein Chocolate', 
+        'Brain Drive 60 Capsules', 'L-Glutamine', 'Recovery Chocolate', 'Resveratrol', 
+        'Essential Plant-Based Protein Vanilla Chai', 'Collagen Shot', 'Recovery Vanilla', 
+        'Whey Protein Isolate Piedmont Chocolate 24 packet bundle', 'Collagen Peptides', 
+        'Fuel Cherry Berry / 12 Single Serving Packets', 'Fuel Strawberry Lime', 'Fuel Cherry Berry', 
+        'Whey Protein Isolate Veracruz Vanilla 24 packet bundle', 'Fuel Strawberry Lime / 12 Single Serving Packets', 
+        'Recovery Chocolate 14 pack bundle', 'Essential Plant-Based Protein 14 S - Piedmont Chocolate', 
+        'Essential Plant-Based Protein 14 S - Vanilla Chai', 'Recovery Vanilla 14 pack bundle', 
+        'Tongkat Ali', 'Vitamin D 60 serving', 'Magnesium Malate', 'Vital Aminos', 'Acetyl L-Carnitine', 
+        'Turmeric 30 serving', 'Tongkat Ali 3 Bottle Value Pack', 'Elite Sleep', 'PR Lotion', 
+        'PR Lotion', 'PR Lotion', 'PR Lotion', 'Other', 'Magnesium Malate 120 Capsules, 60 Day Supply', 
+        'PR Lotion', 'Fuel 28g of Carbs per Serving, Box of 12 Servings (Mixed Pack:Cherry Berry and Strawberry Lime)', 
+        'PR Lotion'
+    ]
     })
 
-    # Merge product names into the final_preds_df_com_agg
-    final_preds_df_com_agg = pd.merge(
-        final_preds_df_com_agg, 
-        comskulist[['SKU', 'product_name']],  # Only merging SKU and product_name from comskulist
-        how='left', 
-        on='SKU'  # Merge on SKU without creating duplicates
-    )
 
-    columns_order = ['SKU', 'product_name'] + [col for col in final_preds_df_com_agg.columns if col not in ['SKU', 'product_name']]
-    final_preds_df_com_agg = final_preds_df_com_agg[columns_order]
+    # Merge product names into the final_preds_df_com_agg
+    # final_preds_df_com_agg = pd.merge(
+    #     final_preds_df_com_agg, 
+    #     comskulist[['SKU', 'product_name']],  # Only merging SKU and product_name from comskulist
+    #     how='left', 
+    #     on='SKU'  # Merge on SKU without creating duplicates
+    # )
+
+    # columns_order = ['SKU', 'product_name'] + [col for col in final_preds_df_com_agg.columns if col not in ['SKU', 'product_name']]
+    # final_preds_df_com_agg = final_preds_df_com_agg[columns_order]
 
     amaskulist = pd.DataFrame({
     'SKU': [
@@ -1141,39 +1256,80 @@ def load_and_process_data(marketing_data):
         'PRPACKET5-CA', 'MOMENTOUS-APG', 'T4-YDUJ-ZG1F', 'MOMENTOUS-ASHWA'
     ],
     'product_name': [
-        'Magnesium L-Threonate_30 Servings', 'Creatine_Creatine (5 Grams Per Serving)', 'Omega-3_', 
-        'Collagen Peptides_30 Servings', 'Whey Protein Isolate_24 Servings (Chocolate)', 
-        'Whey Protein Isolate_24 Servings (Vanilla)', 'L-Theanine_60 Servings', 'Zinc_60 Servings', 
-        'Inositol_60 Servings', 'Rhodiola Rosea_60 Servings', 'Multivitamin_', 'Alpha GPC_60 Servings', 
-        'Recovery_15 Servings (Chocolate)', 'Essential Plant-Based Protein_', 'Tyrosine_60 Servings', 
-        'Essential Plant-Based Protein_', 'Sleep_30 Servings', 'Brain Drive_30 Servings/60 Capsules', 
-        'Apigenin_', 'L-Glutamine_60 Servings', 'Recovery_15 Servings (Vanilla)', 'Collagen Shot_15 Servings', 
-        'Resveratrol_30 Servings', 'Fuel_15 Serving Bag, Strawberry Lime', 'Fuel_15 Serving Bag, Cherry Berry', 
-        'Fuel_12 Single Serving Packets, Strawberry Lime', 'Fuel_12 Single Serving Packets, Cherry Berry', 
-        'Tongkat Ali_', 'Fadogia Agrestis_60 Servings', 'PR Lotion_Bottle (300g)', 'Vitamin D_60 serving', 
-        'Vital Aminos_BCAA & EAA, Tropical Punch, 30 Servings', 'Elite Sleep_30 Servings', 
-        'Acetyl L-Carnitine_60 Servings', 'Turmeric_30 serving', 'PR Lotion_', 'Apigenin_', 
-        'Whey Protein Isolate_24 Servings Per Pouch (Vanilla)', 'Ashwagandha_'
-        ]
+        'Magnesium L-Threonate 30 Servings', 'Creatine Creatine (5 Grams Per Serving)', 'Omega-3', 
+        'Collagen Peptides 30 Servings', 'Whey Protein Isolate 24 Servings (Chocolate)', 
+        'Whey Protein Isolate 24 Servings (Vanilla)', 'L-Theanine 60 Servings', 'Zinc 60 Servings', 
+        'Inositol 60 Servings', 'Rhodiola Rosea 60 Servings', 'Multivitamin', 'Alpha GPC 60 Servings', 
+        'Recovery 15 Servings (Chocolate)', 'Essential Plant-Based Protein', 'Tyrosine 60 Servings', 
+        'Essential Plant-Based Protein', 'Sleep 30 Servings', 'Brain Drive 30 Servings/60 Capsules', 
+        'Apigenin', 'L-Glutamine 60 Servings', 'Recovery 15 Servings (Vanilla)', 'Collagen Shot 15 Servings', 
+        'Resveratrol 30 Servings', 'Fuel 15 Serving Bag, Strawberry Lime', 'Fuel 15 Serving Bag, Cherry Berry', 
+        'Fuel 12 Single Serving Packets, Strawberry Lime', 'Fuel 12 Single Serving Packets, Cherry Berry', 
+        'Tongkat Ali', 'Fadogia Agrestis 60 Servings', 'PR Lotion Bottle (300g)', 'Vitamin D 60 serving', 
+        'Vital Aminos BCAA & EAA, Tropical Punch, 30 Servings', 'Elite Sleep 30 Servings', 
+        'Acetyl L-Carnitine 60 Servings', 'Turmeric 30 serving', 'PR Lotion', 'Apigenin', 
+        'Whey Protein Isolate 24 Servings Per Pouch (Vanilla)', 'Ashwagandha'
+    ]
     })
 
-    # Merge product names into the final_preds_df_ama_agg
-    final_preds_df_ama_agg = pd.merge(
-        final_preds_df_ama_agg, 
-        amaskulist[['SKU', 'product_name']],  # Only merging SKU and product_name from comskulist
-        how='left', 
-        on='SKU'  # Merge on SKU without creating duplicates
-    )
+    # Function to add product names to a DataFrame
+    def add_product_names(df, skulist):
+        return pd.merge(df, skulist[['SKU', 'product_name']], how='left', on='SKU')
 
-    columns_order = ['SKU', 'product_name'] + [col for col in final_preds_df_ama_agg.columns if col not in ['SKU', 'product_name']]
-    final_preds_df_ama_agg = final_preds_df_ama_agg[columns_order]
+
+    # Merge product names into the final_preds_df_ama_agg
+    # final_preds_df_ama_agg = pd.merge(
+    #     final_preds_df_ama_agg, 
+    #     amaskulist[['SKU', 'product_name']],  # Only merging SKU and product_name from comskulist
+    #     how='left', 
+    #     on='SKU'  # Merge on SKU without creating duplicates
+    # )
+
+    # columns_order = ['SKU', 'product_name'] + [col for col in final_preds_df_ama_agg.columns if col not in ['SKU', 'product_name']]
+    # final_preds_df_ama_agg = final_preds_df_ama_agg[columns_order]
 
     # Now final_preds_df_ama_agg has the product names included
-    final_preds_df_ama_agg
+    # final_preds_df_ama_agg
 
+    final_preds_df_dotcom_new = final_preds_df_dotcom_new[~final_preds_df_dotcom_new['SKU'].isin(skus_to_exclude)]
+    final_preds_df_dotcom_ret = final_preds_df_dotcom_ret[~final_preds_df_dotcom_ret['SKU'].isin(skus_to_exclude)]
+    final_preds_df_dotcomsubs_subsplit = final_preds_df_dotcomsubs_subsplit[~final_preds_df_dotcomsubs_subsplit['SKU'].isin(skus_to_exclude)]
+
+    # Add product names to all DataFrames
+    final_preds_df_com_agg = add_product_names(final_preds_df_com_agg, comskulist)
+    final_preds_df_ama_agg = add_product_names(final_preds_df_ama_agg, amaskulist)
+    # final_preds_df_dotcomsubs_agg = add_product_names(final_preds_df_dotcomsubs_agg, comskulist)
+    # final_preds_df_comotp_agg = add_product_names(final_preds_df_comotp_agg, comskulist)
+    # final_preds_df_amasubs_agg = add_product_names(final_preds_df_amasubs_agg, amaskulist)
+    # final_preds_df_amaotp_agg = add_product_names(final_preds_df_amaotp_agg, amaskulist)
+    final_preds_df_ama_new = add_product_names(final_preds_df_ama_new, amaskulist)
+    final_preds_df_ama_ret = add_product_names(final_preds_df_ama_ret, amaskulist)
+    final_preds_df_amasubs_subsplit = add_product_names(final_preds_df_amasubs_subsplit, amaskulist)
+    final_preds_df_dotcom_new = add_product_names(final_preds_df_dotcom_new, comskulist)
+    final_preds_df_dotcom_ret = add_product_names(final_preds_df_dotcom_ret, comskulist)
+    final_preds_df_dotcomsubs_subsplit = add_product_names(final_preds_df_dotcomsubs_subsplit, comskulist)
+
+
+    # Reorder columns to have SKU and product_name first
+    column_order = ['SKU', 'product_name'] + [col for col in final_preds_df_com_agg.columns if col not in ['SKU', 'product_name']]
+    final_preds_df_com_agg = final_preds_df_com_agg[column_order]
+    final_preds_df_ama_agg = final_preds_df_ama_agg[column_order]
+    final_preds_df_ama_new = final_preds_df_ama_new[column_order]
+    final_preds_df_ama_ret = final_preds_df_ama_ret[column_order]
+    final_preds_df_amasubs_subsplit = final_preds_df_amasubs_subsplit[column_order]
+    final_preds_df_dotcom_new = final_preds_df_dotcom_new[column_order]
+    final_preds_df_dotcom_ret = final_preds_df_dotcom_ret[column_order]
+    final_preds_df_dotcomsubs_subsplit = final_preds_df_dotcomsubs_subsplit[column_order]
+    # final_preds_df_dotcomsubs_agg = final_preds_df_dotcomsubs_agg[column_order]
+    # final_preds_df_comotp_agg = final_preds_df_comotp_agg[column_order]
+    # final_preds_df_amasubs_agg = final_preds_df_amasubs_agg[column_order]
+    # final_preds_df_amaotp_agg = final_preds_df_amaotp_agg[column_order]
 
 
     return final_preds_df_com_agg.round(0), final_preds_df_ama_agg.round(0), \
-           final_preds_df_dotcomsubs_agg.round(0), final_preds_df_comotp_agg.round(0), \
-           final_preds_df_amasubs_agg.round(0), final_preds_df_amaotp_agg.round(0)
+        final_preds_df_dotcom_new.round(0),final_preds_df_dotcom_ret.round(0),final_preds_df_dotcomsubs_subsplit.round(0),\
+        final_preds_df_ama_new.round(0),final_preds_df_ama_ret.round(0),final_preds_df_amasubs_subsplit.round(0)    
+    
+        #    final_preds_df_dotcomsubs_agg.round(0), final_preds_df_comotp_agg.round(0), \
+        #    final_preds_df_amasubs_agg.round(0), final_preds_df_amaotp_agg.round(0),\
 
