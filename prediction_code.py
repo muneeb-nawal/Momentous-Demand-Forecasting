@@ -166,7 +166,7 @@ def find_model_file(directory, key):
     """
     try:
         # Create a regex pattern based on the key (for example, key_M*.pkl)
-        pattern = re.compile(f"{key}_M.*\.pkl")
+        pattern = re.compile(rf"{key}_M.*\.pkl")
 
         all_files = os.listdir(directory)
         for file_name in all_files:
