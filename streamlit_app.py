@@ -311,22 +311,22 @@ def main_app():
             if st.session_state.view_option == "Split by Sales Channel":
                 display_dataframe_with_totals(st.session_state.final_preds_df_com_agg)
             else:
-                st.subheader("New Customer Predictions")
+                st.subheader("New Customer Units Sold Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_dotcom_new)
-                st.subheader("Returning Customer Predictions")
+                st.subheader("Returning Customer Units Sold Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_dotcom_ret)
-                st.subheader("Subscription Customer Predictions")
+                st.subheader("Subscription Customer Units Sold Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_dotcomsubs_subsplit)
 
         with tab2:
             if st.session_state.view_option == "Split by Sales Channel":
                 display_dataframe_with_totals(st.session_state.final_preds_df_ama_agg)
             else:
-                st.subheader("New Customer Predictions")
+                st.subheader("New Customer Units Sold Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_ama_new)
-                st.subheader("Returning Customer Predictions")
+                st.subheader("Returning Customer Units Sold Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_ama_ret)
-                st.subheader("Subscription Customer Predictions")
+                st.subheader("Subscription Customer Units Sold Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_amasubs_subsplit)
 
     st.markdown("**Note**: This app enables you to view prediction results. Make sure to upload the latest dataset and model files to ensure up-to-date predictions.")
