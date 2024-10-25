@@ -5,6 +5,7 @@ from io import BytesIO
 import time
 from prediction_code import load_and_process_data
 import numpy as np
+from datetime import datetime, timedelta
 
 
 # Set page config
@@ -171,29 +172,59 @@ def main_app():
         </div>
         """, unsafe_allow_html=True)
         
-        channels = ["Spends_Meta", "Spends_Google", "Spends_Amazon", "Spends_Audio_SponCon", "Spends_Partnerships", "Spends_Others"]
-        months = ["current month", "month 1", "month 2", "month 3", "month 4"]
-        
-        if 'marketing_data' not in st.session_state:
-            st.session_state.marketing_data = pd.DataFrame({
-                'Channel': channels,
-                'current month': [76904.46, 169527.61, 214805.7733, 355941.7067, 449181.4467, 7000.0],
-                'month 1': [110000.0, 175000.0, 212215.0, 219228.0, 306728.0, 15000.0],
-                'month 2': [120000.0, 225000.0, 233437.0, 254928.0, 364928.0, 20000.0],
-                'month 3': [85000.0, 175000.0, 256781.0, 224228.0, 331728.0, 65000.0],
-                'month 4': [85000.0, 175000.0, 256781.0, 224228.0, 331728.0, 65000.0]
-            })
+        # Define the base table
+        base_table = pd.DataFrame({
+            'order month': pd.date_range(start='9/1/2024', periods=16, freq='MS'),
+            'Spends_Amazon': [224372.24] + [212215] + [233437] + [256781]*13,
+            'Spends_Audio_SponCon': [352848.56] + [219228] + [254928] + [224228]*13,
+            'Spends_Google': [167742.84] + [175000] + [225000] + [175000]*13,
+            'Spends_Meta': [129333.12] + [110000] + [120000] + [85000]*13,
+            'Spends_Others': [3000] + [15000] + [20000] + [65000]*13,
+            'Spends_Partnerships': [449602.39] + [306728] + [364928] + [331728]*13
+        })
 
-        display_df = st.session_state.marketing_data.copy()
-        display_df['Channel'] = display_df['Channel'].apply(lambda x: x.replace('_', ' '))
-        
+        # Function to get the dynamic month label
+        def get_dynamic_month(date):
+            today = datetime.now().replace(day=1)
+            months_diff = (date.year - today.year) * 12 + date.month - today.month
+            if months_diff == 0:
+                return "current month"
+            elif 1 <= months_diff <= 4:
+                return f"month {months_diff}"
+            else:
+                return None
+
+        # Apply the dynamic month labeling
+        base_table['dynamic_month'] = base_table['order month'].apply(get_dynamic_month)
+
+        # Filter to only include rows with a dynamic month label
+        display_df = base_table[base_table['dynamic_month'].notna()].copy()
+
+        # Prepare the data for UI display
+        ui_df = display_df.melt(id_vars=['order month', 'dynamic_month'], 
+                                var_name='Marketing Channels', 
+                                value_name='Spend')
+
+        # Pivot the melted dataframe to get dates as columns
+        ui_df = ui_df.pivot(index='Marketing Channels', columns='order month', values='Spend')
+        ui_df = ui_df.reset_index()
+
+        # Rename columns to date strings
+        ui_df.columns.name = None
+        ui_df.columns = ['Marketing Channels'] + [col.strftime('%Y-%m-%d') for col in ui_df.columns[1:]]
+
+        # Replace underscores with spaces in Marketing Channels
+        ui_df['Marketing Channels'] = ui_df['Marketing Channels'].str.replace('_', ' ')
+
+        # Display the editable table in the UI
+        st.subheader("Marketing Spends")
         edited_df = st.data_editor(
-            display_df,
+            ui_df,
             num_rows="fixed",
             hide_index=True,
             key="custom_spends_editor",
             column_config={
-                "Channel": st.column_config.TextColumn(
+                "Marketing Channels": st.column_config.TextColumn(
                     "Marketing Channels",
                     width="medium",
                     required=True,
@@ -203,13 +234,20 @@ def main_app():
                     min_value=0.0,
                     max_value=1000000.0,
                     step=0.01,
-                    format="$%.0f"
-                ) for col in months}
+                    format="$%.2f"
+                ) for col in ui_df.columns if col != 'Marketing Channels'}
             },
-            disabled=["Channel"]
+            disabled=["Marketing Channels"]
         )
-        
-        st.session_state.marketing_data[months] = edited_df[months]
+
+        # Transform the data for backend processing
+        backend_df = edited_df.copy()
+        backend_df.columns = ['Channel'] + list(display_df['dynamic_month'])
+        backend_df['Channel'] = backend_df['Channel'].str.replace(' ', '_')
+
+        # Print confirmation for backend data to the command prompt
+        print("\nBackend Data (for confirmation):")
+        print(backend_df.to_string(index=False))
 
     # Generate Results button
     if st.session_state.run_counter > 0:
@@ -217,13 +255,17 @@ def main_app():
 
     if st.button('Generate Results'):
         with st.spinner('Running predictions... This may take some time.'):
-            numeric_df = st.session_state.marketing_data.copy()
-            numeric_df[months] = numeric_df[months].apply(pd.to_numeric, errors='coerce')
+            # Use the backend data for predictions
+            numeric_df = backend_df.copy()
+            # numeric_df.set_index('Channel', inplace=True)
+            # numeric_df = numeric_df.apply(pd.to_numeric, errors='coerce')
+            print(numeric_df)
             
             final_preds_df_com_agg, final_preds_df_ama_agg, \
             final_preds_df_dotcom_new, final_preds_df_dotcom_ret, final_preds_df_dotcomsubs_subsplit, \
             final_preds_df_ama_new, final_preds_df_ama_ret, final_preds_df_amasubs_subsplit = load_and_process_data(numeric_df)
 
+            # Store the results in session state
             st.session_state.predictions_available = True
             st.session_state.final_preds_df_com_agg = final_preds_df_com_agg
             st.session_state.final_preds_df_ama_agg = final_preds_df_ama_agg
@@ -235,7 +277,7 @@ def main_app():
             st.session_state.final_preds_df_amasubs_subsplit = final_preds_df_amasubs_subsplit
             st.session_state.run_counter += 1
         st.success('Predictions are now available!')
-        st.rerun()  # Use experimental_rerun() instead of rerun()
+        st.rerun()
 
     st.markdown("---")
 
@@ -287,8 +329,8 @@ def main_app():
                 st.subheader("Subscription Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_amasubs_subsplit)
 
-
     st.markdown("**Note**: This app enables you to view prediction results. Make sure to upload the latest dataset and model files to ensure up-to-date predictions.")
+
 
 # Main execution
 if __name__ == "__main__":
