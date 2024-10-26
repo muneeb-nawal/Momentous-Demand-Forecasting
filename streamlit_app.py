@@ -154,6 +154,7 @@ def main_app():
         st.session_state.run_counter = 0
     if 'view_option' not in st.session_state:
         st.session_state.view_option = "Split by Sales Channel"
+    
 
     # Determine if the expander should be expanded
     expand_spends = st.session_state.run_counter == 0
@@ -234,7 +235,7 @@ def main_app():
                     min_value=0.0,
                     max_value=1000000.0,
                     step=0.01,
-                    format="$%.2f"
+                    format="$%f"
                 ) for col in ui_df.columns if col != 'Marketing Channels'}
             },
             disabled=["Marketing Channels"]
@@ -288,12 +289,16 @@ def main_app():
         st.markdown("**🔔 Important: To save your results, please use the download functionality in each table. Results are not automatically saved.**")
         
         # Move the radio button outside of the if statement
-        st.session_state.view_option = st.radio(
+        view_option = st.radio(
             "Choose view option:", 
             ("Split by Sales Channel", "Split by Order Type"), 
             key="view_option_radio",
             index=0 if st.session_state.view_option == "Split by Sales Channel" else 1
         )
+
+        if view_option != st.session_state.view_option:
+            st.session_state.view_option = view_option
+            st.rerun()
 
         tab1, tab2 = st.tabs([".com Predictions", "Amazon Predictions"])
 
@@ -305,28 +310,29 @@ def main_app():
             df_display[numeric_cols] = df_display[numeric_cols].applymap(lambda x: f"{x:,.0f}")
             if 'Channel' in df_display.columns:
                 df_display['Channel'] = df_display['Channel'].apply(lambda x: x.replace('_', ' '))
+            
             st.dataframe(df_display)
 
         with tab1:
             if st.session_state.view_option == "Split by Sales Channel":
                 display_dataframe_with_totals(st.session_state.final_preds_df_com_agg)
             else:
-                st.subheader("New Customer Units Sold Predictions")
+                st.subheader("New Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_dotcom_new)
-                st.subheader("Returning Customer Units Sold Predictions")
+                st.subheader("Returning Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_dotcom_ret)
-                st.subheader("Subscription Customer Units Sold Predictions")
+                st.subheader("Subscription Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_dotcomsubs_subsplit)
 
         with tab2:
             if st.session_state.view_option == "Split by Sales Channel":
                 display_dataframe_with_totals(st.session_state.final_preds_df_ama_agg)
             else:
-                st.subheader("New Customer Units Sold Predictions")
+                st.subheader("New Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_ama_new)
-                st.subheader("Returning Customer Units Sold Predictions")
+                st.subheader("Returning Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_ama_ret)
-                st.subheader("Subscription Customer Units Sold Predictions")
+                st.subheader("Subscription Customer Predictions")
                 display_dataframe_with_totals(st.session_state.final_preds_df_amasubs_subsplit)
 
     st.markdown("**Note**: This app enables you to view prediction results. Make sure to upload the latest dataset and model files to ensure up-to-date predictions.")
