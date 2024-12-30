@@ -186,9 +186,9 @@ def predict_with_saved_models(input_data, directory, keys=None, reconstruct_date
     logging.info("Starting prediction with saved models")
     results_list = []
 
-    if not os.path.exists(directory):
-        logging.error(f"Directory {directory} does not exist.")
-        return pd.DataFrame()
+    # if not os.path.exists(directory):
+    #     logging.error(f"Directory {directory} does not exist.")
+    #     return pd.DataFrame()
 
     if keys is None:
         keys = input_data.keys()
@@ -274,52 +274,54 @@ def calculate_total_months(start_date_str, end_date_str):
     return (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
 
 def create_transformed_df_otp(df, sales_channel):
-        """
-        Filter the dataframe by the given sales channel and apply the necessary transformations.
-        Returns the transformed dataframe.
-        """
+    """
+    Filter the dataframe by the given sales channel and apply the necessary transformations.
+    Returns the transformed dataframe.
+    """
+    
+    df_copy = df.copy()
+    print(df_copy.columns)
+    
+    # Check if 'order_date' exists, if not, print error
+    if 'order_date' not in df_copy.columns:
+        print("Error: 'order_date' column is missing from the DataFrame!")
+        return pd.DataFrame()  # Return empty DataFrame if 'order_date' is missing
+    
+    # Convert 'order_date' to datetime
+    df_copy['order_date'] = pd.to_datetime(df_copy['order_date'])
+    
+    # Drop unnecessary columns
+    df_copy = df_copy.drop(['Varient title', 'Amazon_spend_sku_wise','product_name_priority_sku'], axis=1, errors='ignore')
+
+    # Filter out specific SKUs early in the process
+    skus_to_filter = ['df_38_comsubs_850030796080', 'df_40_amasubs_MOMENTOUS-ASHWA']
+    df_copy = df_copy[~df_copy['product_name'].isin(skus_to_filter)]
+
+    # Filter the DataFrame based on the sales_channel
+    filtered_df = df_copy[df_copy['sales_channel'] == sales_channel]
+    filtered_df.fillna(0,inplace=True)
+    
+    # Apply transformations for each unique product
+    transformed_dfs = []
+    unique_product_names = filtered_df['product_name'].unique()
+    
+    for product_name in unique_product_names:
+        if 'Unknown Product' in product_name:
+            continue
         
-        df_copy = df.copy()
-        print(df_copy.columns)
-        
-        # Check if 'order_date' exists, if not, print error
-        if 'order_date' not in df_copy.columns:
-            print("Error: 'order_date' column is missing from the DataFrame!")
-            return pd.DataFrame()  # Return empty DataFrame if 'order_date' is missing
-        
-        # Convert 'order_date' to datetime
-        df_copy['order_date'] = pd.to_datetime(df_copy['order_date'])
-        
+        # Sanitize product name
+        sanitized_product_name = str(product_name).replace(" ", "_").replace("/", "_").replace("\\", "_")
+        product_df = filtered_df[filtered_df['product_name'] == product_name]
+
         # Drop unnecessary columns
-        df_copy = df_copy.drop(['Varient title', 'Amazon_spend_sku_wise','product_name_priority_sku'], axis=1, errors='ignore')
-
-        # Filter the DataFrame based on the sales_channel
-        filtered_df = df_copy[df_copy['sales_channel'] == sales_channel]
-
-        filtered_df.fillna(0,inplace=True)
-
+        product_df = product_df.drop(columns=['Year', 'sales_channel', 'product_name_priority_sku'], errors='ignore')
         
-        # Apply transformations for each unique product
-        transformed_dfs = []
-        unique_product_names = filtered_df['product_name'].unique()
-        
-        for product_name in unique_product_names:
-            if 'Unknown Product' in product_name:
-                continue
-            
-            # Sanitize product name
-            sanitized_product_name = str(product_name).replace(" ", "_").replace("/", "_").replace("\\", "_")
-            product_df = filtered_df[filtered_df['product_name'] == product_name]
-
-            # Drop unnecessary columns
-            product_df = product_df.drop(columns=['Year', 'sales_channel', 'product_name_priority_sku'], errors='ignore')
-            
-            transformed_dfs.append(product_df)
-        
-        if transformed_dfs:
-            return pd.concat(transformed_dfs, ignore_index=True)
-        else:
-            return pd.DataFrame()
+        transformed_dfs.append(product_df)
+    
+    if transformed_dfs:
+        return pd.concat(transformed_dfs, ignore_index=True)
+    else:
+        return pd.DataFrame()
 
 def filter_to_current_and_next_months(df, num_months=5):
     """
@@ -418,9 +420,9 @@ def load_and_process_data(marketing_data):
     spends_df_subs = pd.DataFrame(spend_updates, index=['Spends_Meta', 'Spends_Google', 'Spends_Amazon', 'Spends_Audio_SponCon', 'Spends_Partnerships', 'Spends_Others']).T
 
     # Aggregate spend data in spends_df_subs
-    spends_df_subs['platform_spends'] = spends_df_subs['Spends_Meta'] + spends_df_subs['Spends_Google'] + spends_df_subs['Spends_Others']
-    spends_df_subs['promotional_spends'] = spends_df_subs['Spends_Audio_SponCon'] + spends_df_subs['Spends_Partnerships']
-    spends_df_subs['Amazon_spends'] = spends_df_subs['Spends_Amazon']
+    # spends_df_subs['platform_spends'] = spends_df_subs['Spends_Meta'] + spends_df_subs['Spends_Google'] + spends_df_subs['Spends_Others']
+    # spends_df_subs['promotional_spends'] = spends_df_subs['Spends_Audio_SponCon'] + spends_df_subs['Spends_Partnerships']
+    # spends_df_subs['Amazon_spends'] = spends_df_subs['Spends_Amazon']
 
     # Function to map generic month labels to actual date strings
     def map_month_labels_to_dates():
@@ -440,9 +442,12 @@ def load_and_process_data(marketing_data):
     for generic_label, actual_month in month_mapping.items():
         mask = (df_subs['age'] == 0) & (df_subs['acquisition_month_sku_level'] == actual_month)
         if any(mask):
-            df_subs.loc[mask, 'platform_spends'] = spends_df_subs.at[generic_label, 'platform_spends']
-            df_subs.loc[mask, 'promotional_spends'] = spends_df_subs.at[generic_label, 'promotional_spends']
-            df_subs.loc[mask, 'Amazon_spends'] = spends_df_subs.at[generic_label, 'Amazon_spends']
+            df_subs.loc[mask, 'Spends_Meta'] = spends_df_subs.at[generic_label, 'Spends_Meta']
+            df_subs.loc[mask, 'Spends_Google'] = spends_df_subs.at[generic_label, 'Spends_Google']
+            df_subs.loc[mask, 'Spends_Amazon'] = spends_df_subs.at[generic_label, 'Spends_Amazon']
+            df_subs.loc[mask, 'Spends_Audio_SponCon'] = spends_df_subs.at[generic_label, 'Spends_Audio_SponCon']
+            df_subs.loc[mask, 'Spends_partnerships'] = spends_df_subs.at[generic_label, 'Spends_Partnerships']
+            df_subs.loc[mask, 'Spends_Others'] = spends_df_subs.at[generic_label, 'Spends_Others']
         
     print("Spends data has been updated successfully.")
         # else:
@@ -451,9 +456,12 @@ def load_and_process_data(marketing_data):
     # Verify the update by printing a summary of the updated data
     print("\nVerification of Updated Spends Data:")
     verification_df = df_subs[df_subs['age'] == 0].groupby('acquisition_month_sku_level').agg({
-        'platform_spends': 'first',
-        'promotional_spends': 'first',
-        'Amazon_spends': 'first'
+        'Spends_Meta': 'first',
+        'Spends_Google': 'first',
+        'Spends_Amazon': 'first',
+        'Spends_Audio_SponCon': 'first',
+        'Spends_partnerships': 'first',
+        'Spends_Others': 'first'
     }).reset_index()
 
     # Sort the DataFrame by acquisition_month_sku_level
@@ -470,7 +478,7 @@ def load_and_process_data(marketing_data):
     dataframes_dotcomsubs = process_products_by_name(df_dotcomsubs)
 
     # Directory where your models are saved
-    directory = 'dot_com/Best Outputs/best_models'
+    directory = 'best models com subs/best_models'
 
     # Initialize an empty DataFrame to store all predictions
     final_preds_df_dotcomsubs = pd.DataFrame()
@@ -489,22 +497,26 @@ def load_and_process_data(marketing_data):
     final_preds_df_dotcomsubs_agg = get_final_results(final_preds_df_dotcomsubs)
     final_preds_df_dotcomsubs_agg.head()
 
+   # SKUs to process
     skus_for_lr_comsubs = [
-        'df_03_comsubs_850243008796',
-        'df_20_comsubs_850030796011',
-        'df_21_comsubs_850243008598',
-        'df_23_comsubs_850243008901',
-        'df_39_comsubs_850243008970',
-        'df_41_comsubs_850030796271',
-        'df_43_comsubs_850243008987',
-        'df_44_comsubs_3xTongkat',
-        'df_47_comsubs_850030796349'
+        "df_05_comsubs_850030796035",
+        "df_06_comsubs_850030796172",
+        "df_08_comsubs_850030796257",
+        "df_11_comsubs_850030796165"
     ]
+
+    # Start dates for each SKU as strings (in 'YYYY-MM-DD' format)
+    start_dates_comsubs = {
+        'df_05_comsubs_850030796035': '2024-01-01',
+        'df_06_comsubs_850030796172': '2024-01-01',
+        'df_08_comsubs_850030796257': '2024-01-01',
+        'df_11_comsubs_850030796165': '2024-01-01'
+    }
 
     final_preds_df_dotcomsubs_agg = final_preds_df_dotcomsubs_agg[~final_preds_df_dotcomsubs_agg['SKU'].isin(skus_for_lr_comsubs)]
 
     # Directory where the models are saved
-    model_save_directory_comsubs = 'dot_com/Best Outputs/best_models'
+    model_save_directory_comsubs = 'best models com subs/best_models'
 
     # Define the current date and forecast period till the end of next year
     current_date_comsubs = datetime.datetime.now().replace(day=1)  # Current month (1st of the month)
@@ -512,20 +524,6 @@ def load_and_process_data(marketing_data):
 
     # Calculate the total number of months from the current month to the end of next year
     total_forecast_months_comsubs = (next_year_end_comsubs.year - current_date_comsubs.year) * 12 + (next_year_end_comsubs.month - current_date_comsubs.month + 1)
-
-    # Start dates for each SKU as strings (in 'YYYY-MM-DD' format)
-    start_dates_comsubs = {
-        'df_03_comsubs_850243008796': '2024-01-01',
-        'df_20_comsubs_850030796011': '2024-01-01',
-        'df_21_comsubs_850243008598': '2024-01-01',
-        'df_23_comsubs_850243008901': '2024-01-01',
-        'df_39_comsubs_850243008970': '2024-01-01',
-        'df_41_comsubs_850030796271': '2024-01-01',
-        'df_43_comsubs_850243008987': '2024-01-01',
-        'df_44_comsubs_3xTongkat': '2024-01-01',
-        'df_47_comsubs_850030796349': '2024-05-01'  # Ashwagandha only 3 months
-    }
-
 
 
     # Initialize a DataFrame to store the results
@@ -617,7 +615,7 @@ def load_and_process_data(marketing_data):
     dataframes_amasubs = process_products_by_name(df_amasubs)
 
     # Directory where your models are saved
-    directory = 'amazon/Best Outputs/best_models'
+    directory = 'best models amazon subs/best_models'
 
     # Initialize an empty DataFrame to store all predictions
     final_preds_df_amasubs = pd.DataFrame()
@@ -631,121 +629,122 @@ def load_and_process_data(marketing_data):
 
         # Append the predictions for the current product to the final DataFrame
         final_preds_df_amasubs = pd.concat([final_preds_df_amasubs, predictions_df_amasubs], ignore_index=True)
+        # print(final_preds_df_amasubs.head(2))
 
     final_preds_df_amasubs_agg = get_final_results(final_preds_df_amasubs)
     final_preds_df_amasubs_agg
 
-    skus_for_lr_amasubs = [
-        'df_01_amasubs_MOMENTOUS-HUB-MGLT',
-        'df_02_amasubs_AMPMCR',
-        'df_03_amasubs_ZH-21DU-JGJX',
-        'df_15_amasubs_MOMENTOUS-HUB-TYR',
-        'df_16_amasubs_8S-5QPR-VPEQ',
-        'df_28_amasubs_MOMENTOUS-HUB-TONG',
-        'df_30_amasubs_PR300BOTTLE-A-stickerless',
-        'df_34_amasubs_MOMENTOUS-HUB-ACAR',
-        'df_29_amasubs_MOMENTOUS-HUB-FADO'
-    ]
+    # skus_for_lr_amasubs = [
+    #     'df_01_amasubs_MOMENTOUS-HUB-MGLT',
+    #     'df_02_amasubs_AMPMCR',
+    #     'df_03_amasubs_ZH-21DU-JGJX',
+    #     'df_15_amasubs_MOMENTOUS-HUB-TYR',
+    #     'df_16_amasubs_8S-5QPR-VPEQ',
+    #     'df_28_amasubs_MOMENTOUS-HUB-TONG',
+    #     'df_30_amasubs_PR300BOTTLE-A-stickerless',
+    #     'df_34_amasubs_MOMENTOUS-HUB-ACAR',
+    #     'df_29_amasubs_MOMENTOUS-HUB-FADO'
+    # ]
 
-    final_preds_df_amasubs_agg = final_preds_df_amasubs_agg[~final_preds_df_amasubs_agg['SKU'].isin(skus_for_lr_amasubs)]
-
-
-    # Directory where the models are saved
-    model_save_directory_amasubs = 'amazon/Best Outputs/best_models'
-
-    # Define the current date and forecast period until the end of next year
-    current_date_amasubs = datetime.datetime.now().replace(day=1)  # Current month (1st of the month)
-    end_of_next_year_amasubs = (current_date_amasubs + relativedelta(years=1, month=12, day=31)).replace(day=1)
-    forecast_months_amasubs = calculate_total_months(current_date_amasubs.strftime('%Y-%m-%d'), end_of_next_year_amasubs.strftime('%Y-%m-%d'))  # Forecast until the end of next year
-
-    # Initialize a DataFrame to store the results
-    predictions_df_lr_amasubs = pd.DataFrame()
-
-    # Start dates for each SKU as strings (in 'YYYY-MM-DD' format)
-    start_dates_amasubs = {
-        'df_01_amasubs_MOMENTOUS-HUB-MGLT': '2024-04-01',
-        'df_02_amasubs_AMPMCR': '2024-04-01',
-        'df_03_amasubs_ZH-21DU-JGJX': '2024-01-01',
-        'df_15_amasubs_MOMENTOUS-HUB-TYR': '2024-01-01',
-        'df_16_amasubs_8S-5QPR-VPEQ': '2024-01-01',
-        'df_28_amasubs_MOMENTOUS-HUB-TONG': '2024-01-01',
-        'df_30_amasubs_PR300BOTTLE-A-stickerless': '2024-01-01',
-        'df_34_amasubs_MOMENTOUS-HUB-ACAR': '2024-01-01',
-    }
+    # final_preds_df_amasubs_agg = final_preds_df_amasubs_agg[~final_preds_df_amasubs_agg['SKU'].isin(skus_for_lr_amasubs)]
 
 
-    # Loop through each product and make predictions using saved models
-    for product_key, start_date_str in start_dates_amasubs.items():
-        model_filename_amasubs = os.path.join(model_save_directory_amasubs, f"{product_key}_lm.pkl")
+    # # Directory where the models are saved
+    # model_save_directory_amasubs = 'best models amazon subs/Best Outputs/best_models'
+
+    # # Define the current date and forecast period until the end of next year
+    # current_date_amasubs = datetime.datetime.now().replace(day=1)  # Current month (1st of the month)
+    # end_of_next_year_amasubs = (current_date_amasubs + relativedelta(years=1, month=12, day=31)).replace(day=1)
+    # forecast_months_amasubs = calculate_total_months(current_date_amasubs.strftime('%Y-%m-%d'), end_of_next_year_amasubs.strftime('%Y-%m-%d'))  # Forecast until the end of next year
+
+    # # Initialize a DataFrame to store the results
+    # predictions_df_lr_amasubs = pd.DataFrame()
+
+    # # Start dates for each SKU as strings (in 'YYYY-MM-DD' format)
+    # start_dates_amasubs = {
+    #     'df_01_amasubs_MOMENTOUS-HUB-MGLT': '2024-04-01',
+    #     'df_02_amasubs_AMPMCR': '2024-04-01',
+    #     'df_03_amasubs_ZH-21DU-JGJX': '2024-01-01',
+    #     'df_15_amasubs_MOMENTOUS-HUB-TYR': '2024-01-01',
+    #     'df_16_amasubs_8S-5QPR-VPEQ': '2024-01-01',
+    #     'df_28_amasubs_MOMENTOUS-HUB-TONG': '2024-01-01',
+    #     'df_30_amasubs_PR300BOTTLE-A-stickerless': '2024-01-01',
+    #     'df_34_amasubs_MOMENTOUS-HUB-ACAR': '2024-01-01',
+    # }
+
+
+    # # Loop through each product and make predictions using saved models
+    # for product_key, start_date_str in start_dates_amasubs.items():
+    #     model_filename_amasubs = os.path.join(model_save_directory_amasubs, f"{product_key}_lm.pkl")
         
-        # Check if the model exists for the current SKU
-        if os.path.exists(model_filename_amasubs):
-            logging.info(f"Loading model for product: {product_key}")
-            try:
-                # Load the saved model
-                with open(model_filename_amasubs, 'rb') as model_file:
-                    model = pickle.load(model_file)
+    #     # Check if the model exists for the current SKU
+    #     if os.path.exists(model_filename_amasubs):
+    #         logging.info(f"Loading model for product: {product_key}")
+    #         try:
+    #             # Load the saved model
+    #             with open(model_filename_amasubs, 'rb') as model_file:
+    #                 model = pickle.load(model_file)
 
-                # Calculate the number of months between the start date and current date (full duration)
-                total_months_amasubs = calculate_total_months(start_date_str, current_date_amasubs.strftime('%Y-%m-%d'))
+    #             # Calculate the number of months between the start date and current date (full duration)
+    #             total_months_amasubs = calculate_total_months(start_date_str, current_date_amasubs.strftime('%Y-%m-%d'))
                 
-                # Prepare past dates as integer values (1, 2, 3, ... total_months)
-                past_dates_amasubs = np.arange(1, total_months_amasubs + 1).reshape(-1, 1)
+    #             # Prepare past dates as integer values (1, 2, 3, ... total_months)
+    #             past_dates_amasubs = np.arange(1, total_months_amasubs + 1).reshape(-1, 1)
                 
-                # Prepare future dates for the forecast period (until end of next year)
-                future_dates_amasubs = np.arange(total_months_amasubs + 1, total_months_amasubs + forecast_months_amasubs + 2).reshape(-1, 1)
+    #             # Prepare future dates for the forecast period (until end of next year)
+    #             future_dates_amasubs = np.arange(total_months_amasubs + 1, total_months_amasubs + forecast_months_amasubs + 2).reshape(-1, 1)
 
-                # Make predictions for the full duration
-                predicted_premiums_amasubs = model.predict(past_dates_amasubs)
-                forecasted_premiums_amasubs = model.predict(future_dates_amasubs)
+    #             # Make predictions for the full duration
+    #             predicted_premiums_amasubs = model.predict(past_dates_amasubs)
+    #             forecasted_premiums_amasubs = model.predict(future_dates_amasubs)
 
-                # Create a combined list of all predictions (past + future)
-                all_predictions_amasubs = list(predicted_premiums_amasubs) + list(forecasted_premiums_amasubs)
+    #             # Create a combined list of all predictions (past + future)
+    #             all_predictions_amasubs = list(predicted_premiums_amasubs) + list(forecasted_premiums_amasubs)
                 
-                # Create date labels from the start date for each month (past + future)
-                all_dates_amasubs = pd.date_range(start=start_date_str, periods=len(all_predictions_amasubs), freq='MS').strftime('%Y-%m-%d')
+    #             # Create date labels from the start date for each month (past + future)
+    #             all_dates_amasubs = pd.date_range(start=start_date_str, periods=len(all_predictions_amasubs), freq='MS').strftime('%Y-%m-%d')
                 
-                # Store the results in the DataFrame for the full duration
-                result_row_amasubs = [product_key] + all_predictions_amasubs
-                prediction_columns_amasubs = ['SKU'] + list(all_dates_amasubs)
-                predictions_df_full_amasubs = pd.DataFrame([result_row_amasubs], columns=prediction_columns_amasubs)
+    #             # Store the results in the DataFrame for the full duration
+    #             result_row_amasubs = [product_key] + all_predictions_amasubs
+    #             prediction_columns_amasubs = ['SKU'] + list(all_dates_amasubs)
+    #             predictions_df_full_amasubs = pd.DataFrame([result_row_amasubs], columns=prediction_columns_amasubs)
                 
-                # Concatenate to the main DataFrame
-                predictions_df_lr_amasubs = pd.concat([predictions_df_lr_amasubs, predictions_df_full_amasubs], ignore_index=True)
+    #             # Concatenate to the main DataFrame
+    #             predictions_df_lr_amasubs = pd.concat([predictions_df_lr_amasubs, predictions_df_full_amasubs], ignore_index=True)
 
-                logging.info(f"Predictions completed for {product_key}")
+    #             logging.info(f"Predictions completed for {product_key}")
 
-            except Exception as e:
-                logging.error(f"Error making predictions for product {product_key}: {e}")
-        else:
-            logging.warning(f"No saved model found for product: {product_key}")
+    #         except Exception as e:
+    #             logging.error(f"Error making predictions for product {product_key}: {e}")
+    #     else:
+    #         logging.warning(f"No saved model found for product: {product_key}")
 
-    # Reorder the date columns in chronological order
-    date_columns_amasubs = sorted([col for col in predictions_df_lr_amasubs.columns if col != 'SKU'], key=lambda x: pd.to_datetime(x))
-    predictions_df_lr_amasubs = predictions_df_lr_amasubs[['SKU'] + date_columns_amasubs]
+    # # Reorder the date columns in chronological order
+    # date_columns_amasubs = sorted([col for col in predictions_df_lr_amasubs.columns if col != 'SKU'], key=lambda x: pd.to_datetime(x))
+    # predictions_df_lr_amasubs = predictions_df_lr_amasubs[['SKU'] + date_columns_amasubs]
 
-    # Ensure the 'SKU' is set as the index for both DataFrames
-    final_preds_df_amasubs_agg.set_index('SKU', inplace=True)
-    predictions_df_lr_amasubs.set_index('SKU', inplace=True)
+    # # Ensure the 'SKU' is set as the index for both DataFrames
+    # final_preds_df_amasubs_agg.set_index('SKU', inplace=True)
+    # predictions_df_lr_amasubs.set_index('SKU', inplace=True)
 
-    # Ensure both DataFrames have the same columns
-    missing_columns_in_predictions_amasubs = [col for col in final_preds_df_amasubs_agg.columns if col not in predictions_df_lr_amasubs.columns]
-    missing_columns_in_best_final_amasubs = [col for col in predictions_df_lr_amasubs.columns if col not in final_preds_df_amasubs_agg.columns]
+    # # Ensure both DataFrames have the same columns
+    # missing_columns_in_predictions_amasubs = [col for col in final_preds_df_amasubs_agg.columns if col not in predictions_df_lr_amasubs.columns]
+    # missing_columns_in_best_final_amasubs = [col for col in predictions_df_lr_amasubs.columns if col not in final_preds_df_amasubs_agg.columns]
 
-    # Add missing columns to predictions_df_lr_amasubs with NaN values
-    for col in missing_columns_in_predictions_amasubs:
-        predictions_df_lr_amasubs[col] = np.nan
+    # # Add missing columns to predictions_df_lr_amasubs with NaN values
+    # for col in missing_columns_in_predictions_amasubs:
+    #     predictions_df_lr_amasubs[col] = np.nan
 
-    # Add missing columns to final_preds_df_amasubs_agg with NaN values
-    for col in missing_columns_in_best_final_amasubs:
-        final_preds_df_amasubs_agg[col] = np.nan
+    # # Add missing columns to final_preds_df_amasubs_agg with NaN values
+    # for col in missing_columns_in_best_final_amasubs:
+    #     final_preds_df_amasubs_agg[col] = np.nan
 
-    # Reorder columns to make sure they are in the same order
-    final_preds_df_amasubs_agg = final_preds_df_amasubs_agg[sorted(final_preds_df_amasubs_agg.columns)]
-    predictions_df_lr_amasubs = predictions_df_lr_amasubs[sorted(predictions_df_lr_amasubs.columns)]
+    # # Reorder columns to make sure they are in the same order
+    # final_preds_df_amasubs_agg = final_preds_df_amasubs_agg[sorted(final_preds_df_amasubs_agg.columns)]
+    # predictions_df_lr_amasubs = predictions_df_lr_amasubs[sorted(predictions_df_lr_amasubs.columns)]
 
-    # Now concatenate the two DataFrames
-    final_preds_df_amasubs_agg = pd.concat([final_preds_df_amasubs_agg, predictions_df_lr_amasubs])
+    # # Now concatenate the two DataFrames
+    # final_preds_df_amasubs_agg = pd.concat([final_preds_df_amasubs_agg, predictions_df_lr_amasubs])
 
     # Reset the index if needed
     final_preds_df_amasubs_agg.reset_index(inplace=True)
@@ -755,7 +754,9 @@ def load_and_process_data(marketing_data):
     
     # Load the data into a DataFrame
     file_path = 'New OTP Data.xlsx' 
-    df_otp = pd.read_excel(file_path)
+    sheet_name = 'creatine combined_flag stockout'  # Update this to the actual sheet name
+
+    df_otp = pd.read_excel(file_path, sheet_name=sheet_name)
 
 
     # Function to determine the number of days in each respective month
@@ -845,6 +846,7 @@ def load_and_process_data(marketing_data):
         
         # Extract SKU and product name from the model file name
         model_parts = model_file.split("_")
+        logging.info(model_parts)
         sku_id = int(model_parts[2]) if model_parts[2].isdigit() else model_parts[2]
         product_name = model_parts[3].split('.')[0]
 
@@ -1000,10 +1002,10 @@ def load_and_process_data(marketing_data):
 
     # Multiplier adjustments based on specific SKU and dates
     multiplier = {
-        850243008918: [{pd.to_datetime("2024-11-01"): 1.56}],
-        850030796288: [{pd.to_datetime("2024-11-01"): 1.78}, {pd.to_datetime("2024-06-01"): 1.242}],
-        850243008925: [{pd.to_datetime("2024-11-01"): 1.66}],
-        850243008956: [{pd.to_datetime("2024-11-01"): 1.96}]
+        850243008918: [{pd.to_datetime("2024-11-01"): 1.0}],
+        850030796288: [{pd.to_datetime("2024-11-01"): 1.0}, {pd.to_datetime("2024-06-01"): 1.0}],
+        850243008925: [{pd.to_datetime("2024-11-01"): 1.0}],
+        850243008956: [{pd.to_datetime("2024-11-01"): 1.0}]
     }
 
     # Apply multipliers
@@ -1103,6 +1105,7 @@ def load_and_process_data(marketing_data):
         
 
     com_splits = calculate_m0_m1_split(df_subs, '.com')
+    logging.info(calculate_m0_m1_split(df_subs, '.com'))
     ama_splits = calculate_m0_m1_split(df_subs, 'Amazon')
 
     com_splits = com_splits.reset_index()
@@ -1117,6 +1120,7 @@ def load_and_process_data(marketing_data):
     final_preds_df_dotcomsubs_firstsubsplit = merged_df.copy()
     for col in final_preds_df_dotcomsubs_agg.columns[1:]:
         final_preds_df_dotcomsubs_firstsubsplit[col] = merged_df[col] * merged_df['M0%']
+        logging.info(final_preds_df_dotcomsubs_firstsubsplit[col])
 
     # Multiply forecasts by M1+% to get final_preds_df_dotcomsubs_subsplit
     final_preds_df_dotcomsubs_subsplit = merged_df.copy()
