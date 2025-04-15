@@ -779,16 +779,13 @@ def load_and_process_data(marketing_data):
     # Create a new dictionary for spends_updates_otp
     spends_updates_otp = {}
 
-    # Create a new dictionary for spends_updates_otp
-    spends_updates_otp = {}
-
     # Iterate over each month and each category, dividing by the number of days in the month
     for i, (month_label, spends) in enumerate(spend_updates.items()):
         spends_updates_otp[month_label] = [float(spend) / days_in_months[i] if days_in_months[i] > 0 else 0.0 for spend in spends.values()]
 
     spends_df_otp = pd.DataFrame(spends_updates_otp, index=['Spends_Meta', 'Spends_Google', 'Spends_Amazon', 'Spends_Audio_SponCon', 'Spends_partnerships', 'Spends_Others']).T
 
-        # Function to map generic month labels to actual date strings
+    # Function to map generic month labels to actual date strings
     def map_month_labels_to_dates():
         current_date = datetime.datetime.now()  # Using datetime.datetime.now() explicitly
         month_mapping = {}
@@ -805,8 +802,7 @@ def load_and_process_data(marketing_data):
     # Create a new column 'order-month' formatted as 'YYYY-MM'
     df_otp['order_month'] = df_otp['order_date'].dt.strftime('%Y-%m')
 
-    # if user_response == 'yes':
-        # Update df_otp with user-provided data
+    # Update df_otp with user-provided data
     for generic_label, actual_month in month_mapping.items():
         mask = (df_otp['order_month'] == actual_month)
         if any(mask):
@@ -817,13 +813,9 @@ def load_and_process_data(marketing_data):
             df_otp.loc[mask, 'Spends_partnerships'] = spends_df_otp.at[generic_label, 'Spends_partnerships']
             df_otp.loc[mask, 'Spends_Others'] = spends_df_otp.at[generic_label, 'Spends_Others']
     print("Spends data has been updated successfully.")
-    # else:
-    #     print("Using default spends data.")
 
     df_otp.drop(columns=['order_month'], inplace=True)
     
-
-
     df_amaotp = create_transformed_df_otp(df_otp, 'Amazon')
 
     df_amaotp['order_date'] = pd.to_datetime(df_amaotp['order_date'])
@@ -862,8 +854,9 @@ def load_and_process_data(marketing_data):
         sku_data.drop_duplicates(subset=['order_date'], inplace=True)
 
         try:
-            # Load the model
-            model = joblib.load(model_path)
+            # Load the model using pickle instead of joblib
+            with open(model_path, 'rb') as f:
+                model = pickle.load(f)
             
             # Determine feature columns based on model type
             if 'LGBM' in str(type(model)):
@@ -894,8 +887,6 @@ def load_and_process_data(marketing_data):
         except Exception as e:
             logging.error(f"Error processing model {model_path}: {e}")
 
-        
-
     # Pivot the DataFrame to wide format
     result_df1 = pd.pivot_table(data=results_df, index='Sku', columns='order_date', values='units_sold')
 
@@ -909,7 +900,6 @@ def load_and_process_data(marketing_data):
 
     # Show the flattened DataFrame
     final_preds_df_amaotp_agg = result_df1.copy()
-    final_preds_df_amaotp_agg
 
     # ### 7.4 comotp predictions
 
@@ -925,9 +915,7 @@ def load_and_process_data(marketing_data):
 
     df_dotcomotp.fillna(0,inplace=True)
 
-
-    
-    # Fi# Filter forecast data starting from September 1, 2024
+    # Filter forecast data starting from September 1, 2024
     forecast_data = df_dotcomotp[df_dotcomotp.order_date >= pd.to_datetime("2024-09-01")]
 
     # Path to the directory containing the best models
@@ -956,8 +944,9 @@ def load_and_process_data(marketing_data):
         sku_data.drop_duplicates(subset=['order_date'], inplace=True)
 
         try:
-            # Load the model
-            model = joblib.load(model_path)
+            # Load the model using pickle instead of joblib
+            with open(model_path, 'rb') as f:
+                model = pickle.load(f)
             
             # Prepare the DataFrame based on the model type
             if 'LGBM' in str(type(model)):
@@ -1073,18 +1062,6 @@ def load_and_process_data(marketing_data):
     final_preds_df_amasubs_agg['SKU'] = final_preds_df_amasubs_agg['SKU'].str.strip()
     final_preds_df_amaotp_agg['SKU'] = final_preds_df_amaotp_agg['SKU'].astype(str)
 
-    # Append the two DataFrames
-    # combined_df_ama_agg = pd.concat([final_preds_df_amasubs_agg, final_preds_df_amaotp_agg])
-
-    # # Ensure date columns are numeric (convert to numeric if needed)
-    # date_columns = combined_df_ama_agg.columns.drop('SKU')  # Assuming all other columns are dates
-
-    # combined_df_ama_agg[date_columns] = combined_df_ama_agg[date_columns].apply(pd.to_numeric, errors='coerce')
-
-    # # Group by SKU and sum all the numeric columns (date columns)
-    # final_summed_df = combined_df_ama_agg.groupby('SKU').sum().reset_index()
-
-
     # Append the two DataFrames vertically
     combined_df_ama = pd.concat([final_preds_df_amasubs_agg, final_preds_df_amaotp_agg])
 
@@ -1101,14 +1078,12 @@ def load_and_process_data(marketing_data):
 
     skus_to_exclude_ama = ['MOMENTOUS-HUB-FADO', 'MOMENTOUS-HUB-APG', 'MDMF12BE','T4-YDUJ-ZG1F','PRPACKET5-CA']
     final_preds_df_ama_agg = final_preds_df_ama_agg[~final_preds_df_ama_agg['SKU'].isin(skus_to_exclude_ama)]
-    # final_preds_df_ama_agg = final_preds_df_ama_agg[final_preds_df_ama_agg['SKU'] != 'MOMENTOUS-HUB-FADO']
     
     final_preds_df_com_agg = filter_to_current_and_next_months(final_preds_df_com_agg)
     final_preds_df_ama_agg = filter_to_current_and_next_months(final_preds_df_ama_agg)
     
     # creating new, returning and subscription split
         
-
     com_splits = calculate_m0_m1_split(df_subs, '.com')
     logging.info(calculate_m0_m1_split(df_subs, '.com'))
     ama_splits = calculate_m0_m1_split(df_subs, 'Amazon')
@@ -1203,8 +1178,6 @@ def load_and_process_data(marketing_data):
     final_preds_df_ama_new[numeric_cols] = final_preds_df_ama_new_ret[numeric_cols] * var_amanewsplit
     final_preds_df_ama_ret[numeric_cols] = final_preds_df_ama_new_ret[numeric_cols] * var_amaretsplit
 
-
-
     # Create a DataFrame with SKU ID and Product Name - Final
     comskulist = pd.DataFrame({
     'SKU': [
@@ -1244,7 +1217,6 @@ def load_and_process_data(marketing_data):
         'Whey Protein Isolate Veracruz Vanilla 24 packet bundle'
     ]
     })
-
 
     # Merge product names into the final_preds_df_com_agg
     # final_preds_df_com_agg = pd.merge(
